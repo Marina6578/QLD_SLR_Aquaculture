@@ -1,0 +1,55 @@
+---
+title: "Plot NSW Aquaculture"
+output: html_document
+date: "2023-05-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(mapview)
+library(tidyverse)
+library(ozmaps)
+library(here)
+library(tmap)
+library(sf)
+```
+
+# NSW aquaculture
+
+This data is from: URL
+e-mail that was sent from fisheries.data@dpi.nsw.gov.au
+I downloaded this on: 18/may/2023
+
+Data Licensing:
+This downloadable data is licensed under a Creative Commons Attribution - 4.0 International License (CC BY 4.0). Full credit must be given to NSW Department of Primary Industries.
+
+```{r}
+nsw<-st_read(here("raw_data/NSW_aqua/Aquaculture_Leases.shp")) # Reading in NSW aquaculture data
+```
+
+```{r}
+plot(st_geometry(nsw))
+```
+
+```{r}
+mapview(ozmap_states) +
+  mapview(nsw)
+```
+# Australia ShP map
+This data is from: https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3/jul2021-jun2026/access-and-downloads/digital-boundary-files  
+Australia - 2021 - Shapefile
+States and Territories - 2021 - Shapefile
+
+I downloaded this on: 23/May/2023
+
+```{r}
+australia<-st_read(here("raw_data/Australia_country_SHP/AUS_2021_AUST_GDA2020.shp")) 
+```
+```{r}
+plot(st_geometry(australia))
+```
+
+

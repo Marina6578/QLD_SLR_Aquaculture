@@ -1,0 +1,105 @@
+---
+title: "Impacts_lease_nolease_QLD"
+output: html_document
+date: "2023-08-25"
+---
+
+#load packages I will need
+```{r}
+library(tidyverse)
+library(here)
+library(tmap)
+library(sf)
+library(ggplot2)
+library(dplyr)
+```
+
+# load data
+#Queensland leases data obtained from DAF and then ground truthed in the seascapes Lab
+
+```{r}
+qld_leases_DAF<-st_read(here("Practice_aquaculture/raw_data/QLD_aqua/Current_land_based_marine_distances.shp"))
+```
+# load data
+#Queensland leases data obtained after  ground truthed in the seascapes Lab that are not in the list obtained from from DAF
+
+```{r}
+qld_aqua_out_of_lease<-st_read(here("Practice_aquaculture/raw_data/terrestrial_aquaculture_qld_out_of_lease/terrestrial_aquaculture_qld_out_of_lease.shp"))
+```
+#reproject data of the queensland aquaculture leases DAF and create a new column with the area of the polygons
+
+```{r}
+qld_leases_reproj<-st_transform(qld_leases_DAF, 3577)
+qld_leases_reproj <- qld_leases_reproj %>%
+  mutate(lease_area_m2 = st_area(.))
+
+```
+
+
+#reproject data of the queensland aquaculture leases ot of DAF's list and create a new column with the area of the polygons
+
+```{r}
+qld_aqua_out_reproj<-st_transform(qld_aqua_out_of_lease, 3577)
+qld_aqua_out_reproj <- qld_aqua_out_reproj %>%
+  mutate(lease_area_m2 = st_area(.))
+
+```
+
+#load data 
+#Queensland erosion all components erosion and sLR obtained http://qldspatial.information.qld.gov.au/catalogue/custom/search.page?q=%22Erosion prone area all components%22
+
+
+```{r}
+QLD_coastal_erosion_all<-st_read(here("Practice_aquaculture/raw_data/QSC_all_components_of_SLR/Erosion_prone_area_all_components.shp"))
+```
+# reproject all data previously uploaded in shapefile (to 3577 -Australian Albers)
+
+```{r}
+QLD_coastal_erosion_reproj<-st_transform(QLD_coastal_erosion_all, 3577)
+```
+# Dissolve coastal erosion all components layer
+```{r}
+QLD_coastal_erosion_diss<-QLD_coastal_erosion_reproj %>%
+  mutate(diss = 1) %>% #create column to dissolve by
+  group_by(diss) %>% #group by column you created
+  summarise(diss2 = sum(diss, na.rm = T)) #combine column into one new variable
+
+```
+#intersect the Erosion and SLR layer with the layer of leases ot of DAF list used for aquaculture 
+```{r}
+
+qld_leases_erosion_out_of_DAFLIST<-st_intersection(QLD_coastal_erosion_diss, qld_aqua_out_reproj)
+```
+#intersect the Erosion and SLR layer with the layer of leases on DAFlist aquaculture 
+```{r}
+
+qld_leases_erosion_DAFLIST<-st_intersection(QLD_coastal_erosion_diss, qld_leases_reproj)
+```
+
+#Create a Column and get the proportion of each area out of DAF's list of leases that might be affected following erosion and SLR in 2100 in QLD
+```{r}
+qld_leases_erosion_out_of_DAFLIST <- qld_leases_erosion_out_of_DAFLIST %>%
+  mutate(affected_area_m2 = st_area(.),
+         propaffectedArea= affected_area_m2/lease_area_m2)
+```
+#Create a Column and get the proportion of each area out of DAF's list of leases that might be affected following erosion and SLR in 2100 in QLD
+```{r}
+qld_leases_erosion_DAFLIST <- qld_leases_erosion_DAFLIST %>%
+  mutate(affectedarea_m2 = st_area(.),
+         proportion_area_affected= affectedarea_m2/lease_area_m2)
+```
+
+#Write CSV if needed 
+```{r}
+write.csv(qld_leases_erosion_DAFLIST, file="qld_leases_erosion_DAFLIST.csv", row.names = FALSE)
+write.csv(qld_leases_erosion_out_of_DAFLIST, file="qld_leases_erosion_out_of_DAFLIST.csv", row.names = FALSE)
+```
+#create shapefiles of intersection of both lists if needed 
+```{r}
+st_write(qld_leases_erosion_DAFLIST,here("Practice_aquaculture/output_data/qld_leases_erosion_DAFLIST.shp"), delete_layer = TRUE)
+```
+```{r}
+st_write(qld_leases_erosion_out_of_DAFLIST, here("Practice_aquaculture/output_data/qld_leases_erosion_out_of_DAFLIST.shp"), delete_layer = TRUE)
+```
+
+

@@ -1,0 +1,53 @@
+---
+title: "area_compatible_in_leases"
+output: html_document
+date: "2023-08-04"
+---
+#load packages
+```{r}
+library(tidyverse)
+library(here)
+library(tmap)
+library(sf)
+library(ggplot2)
+library(dplyr)
+```
+
+#load my dataset (qld_leases)
+#Queensland aquaculture in land leases data obtained from DAF
+```{r}
+qld_leases<-st_read(here("raw_data/QLD_aqua/Current_land_based_marine_distances.shp"))
+```
+#reproject data
+```{r}
+qld_leases_reproj<-st_transform(qld_leases, 3577)
+```
+#load my dataset 
+```{r}
+qld_leases_erosion<-st_read(here("output_data/qld_leases_erosion.shp"))
+```
+
+```{r}
+qld_leases_erosion_area<-st_area(qld_leases_erosion)
+```
+
+#in my dataset (qld_leases-reproj) make all the areas be in hectares
+```{r}
+qld_leases_reproj_with_area<-mutate(st_area(qld_leases_reproj))
+```
+
+#or something like 
+```{r}
+ qld_leases_reproj %>% 
++     dplyr::mutate(area_meters = st_area(qld_leases_reproj)
++ Area (hectares = sqr_metres * 0.0001)
+```
+```{r}
+```
+```
+```{r}
+qld_leases_reproj$area_hectares <-qld_leases_reproj$
+  mutate(area_in_hectares= convert_metres sqr_to_hectares)
+```
+
+

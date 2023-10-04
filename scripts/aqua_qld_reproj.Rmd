@@ -1,0 +1,56 @@
+---
+title: "Untitled"
+output: html_document
+date: "2023-06-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#load packages
+```{r}
+library(sf)
+```
+
+
+```{r}
+library(here)
+library(tidyverse)
+```
+
+# load data
+
+```{r}
+Aus_map <- st_read(here("raw_data/AustralianStates_SHP/STE_2021_AUST_GDA2020.shp")) 
+```
+```{r}
+qld<-Aus_map %>%
+  filter(STE_NAME21 == "Queensland")
+
+plot(st_geometry(qld))
+```
+
+
+# reproject data
+
+```{r}
+qld_proj<-st_transform(qld, 3577)
+plot(st_geometry(qld_proj))
+```
+
+```{r}
+qld_leases <- st_read(here("raw_data/QLD_aqua/Current_land_based_marine_distances.shp")) 
+```
+```{r}
+plot(st_geometry(qld_proj))
+plot(st_geometry(qld_leases), add = TRUE)
+```
+
+# intersect layers
+
+```{r}
+qld_aqua_intersect<-st_intersection(qld_proj, qld_leases)
+
+plot(st_geometry(qld_aqua_intersect))
+```
+

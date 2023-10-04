@@ -1,0 +1,89 @@
+---
+title: "Percentage_leases_affected_by_SRL_in Queensland"
+output: html_document
+date: "2023-08-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#load packages
+```{r}
+library(tidyverse)
+library(here)
+library(tmap)
+library(sf)
+library(ggplot2)
+library(dplyr)
+```
+# load data
+#Queensland leases data obtained from DAF
+
+```{r}
+qld_leases<-st_read(here("raw_data/QLD_aqua_ground_truth/QLD_terr_aquaculture_ground_truth.shp"))
+```
+#load data 
+#shp Australia 
+
+```{r}
+Australia_map<- st_read(here("raw_data/Australia_country_SHP/AUS_2021_AUST_GDA2020.shp"))
+```
+#load data 
+#shp Australia 
+
+```{r}
+Australia_map<- st_read(here("raw_data/Australia_country_SHP/AUS_2021_AUST_GDA2020.shp"))
+```
+
+
+#load data 
+#Queensland state map
+
+```{r}
+Qld_map<-st_read(here("raw_data/AustralianStates_SHP/STE_2021_AUST_GDA2020.shp"))
+```
+
+
+#load data 
+#Queensland erosion component 3 of sLR obtained https://qldspatial.information.qld.gov.au/catalogue/custom/search.page?q=%22Erosion%20prone%20area%20component%203%20of%203%20sea%20level%20rise%22
+
+```{r}
+QLD_coastal_erosion<-st_read(here("raw_data/QSC_EROSIONProne/Erosion_prone_area_component_3_of_3_sea_level_rise.shp"))
+```
+# reproject all data previously uploaded in shapefile (to 3577 -Australian Albers)
+# I reproj the leases too just in case
+
+```{r}
+Qld_reproj<-st_transform(Qld_map, 3577)
+
+Australia_map_reproj<-st_transform(Australia_map, 3577)
+
+QLD_coastal_erosion_reproj<-st_transform(QLD_coastal_erosion, 3577)
+
+qld_leases_reproj<-st_transform(qld_leases, 3577)
+
+```
+
+# Dissolve coastal erosion layer 
+#QLD_coastal_erosion_diss<-QLD_coastal_erosion_reproj %>%
+#mutate(diss = 1) %>% #create column to dissolve by
+#group_by(diss) %>% #group by column you created
+#summarise(diss2 = sum(diss, na.rm = T)) #combine column into one new variable
+```{r}
+QLD_coastal_erosion_diss<-QLD_coastal_erosion_reproj %>%
+  mutate(diss = 1) %>% 
+  group_by(diss) %>%
+  summarise(diss2 = sum(diss, na.rm = T))
+```
+
+#intersect  aquaculture leases with dissolved coastal erosion layer
+```{r}
+qld_leases_erosion<-st_intersection(QLD_coastal_erosion_diss, qld_leases_reproj)
+```
+
+#Create a shapefile of the intersection between the Aquaculture leases in Queensland and erosion prone areas in Queensland to check how many of them would be potetially affected
+
+```{r}
+st_write(qld_leases_erosion, here("output_data/qld_leases_erosion.shp"), delete_layer = TRUE)
+```
