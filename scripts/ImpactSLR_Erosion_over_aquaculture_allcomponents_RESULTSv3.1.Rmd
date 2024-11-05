@@ -1,0 +1,629 @@
+---
+title: "ImpactSLR_Erosion_over_aquaculture"
+output: html_document
+date: "august 2024"
+---
+
+#load packages I will need
+```{r}
+library(tidyverse)
+library(here)
+library(tmap)
+library(sf)
+library(ggplot2)
+library(dplyr)
+```
+
+# load data
+#Queensland leases data obtained from DAF and then ground truthed in the seascapes Lab
+
+```{r}
+qld_leases<-st_read(here("output_data/RESULTS/Final_species2024_leases.gpkg"))
+```
+
+#reproject data of the queensland aquaculture leases and create a new column with the area of the polygons
+```{r}
+Final_species2024_leases_productive<-Final_species2024_leases%>%
+  filter(Aqcltr_=="Y")
+```
+
+```{r}
+qld_leases_reproj<-st_transform(qld_leases, 3577)
+```
+
+#load australia map
+```{r}
+Australia_map<- st_read(here("raw_data/Australia_country_SHP/AUS_2021_AUST_GDA2020.shp"))
+```
+
+#load data 
+#Queensland state map
+
+```{r}
+Qld_map<-st_read(here("output_data/QLD_map.shp"))
+```
+
+#load data 
+#Queensland erosion all components erosion and sLR obtained http://qldspatial.information.qld.gov.au/catalogue/custom/search.page?q=%22Erosion prone area all components%22
+
+
+```{r}
+QLD_coastal_erosion<-st_read(here("raw_data/QSC_all_components_of_SLR/Erosion_prone_area_all_components.shp"))
+```
+
+# reproject all data previously uploaded in shapefile (to 3577 -Australian Albers)
+
+```{r}
+Qld_reproj<-st_transform(Qld_map, 3577)
+
+Australia_map_reproj<-st_transform(Australia_map, 3577)
+
+QLD_coastal_erosion_reproj<-st_transform(QLD_coastal_erosion, 3577)
+```
+
+# Dissolve coastal erosion all components layer
+```{r}
+QLD_coastal_erosion_allcomp_diss<-QLD_coastal_erosion_reproj %>%
+  mutate(diss = 1) %>% #create column to dissolve by
+  group_by(diss) %>% #group by column you created
+  summarise(diss2 = sum(diss, na.rm = T)) #combine column into one new variable
+
+```
+
+#intersect  aquaculture leases with dissolved coastal erosion  layer
+
+```{r}
+
+qld_leases_erosion<-st_intersection(QLD_coastal_erosion_allcomp_diss, qld_leases)
+
+```
+#only the yes column before intersection (yes that were ground truthed as aquaculture)
+```{r}
+
+qld_leases_erosion_productiveGT<-st_intersection(QLD_coastal_erosion_allcomp_diss, Final_species2024_leases_productive)
+
+```
+#this shows the erosion over the ponds foud in the leases GEE found were productive 
+```{r}
+
+qld_leases_erosion_productiveGEE<-st_intersection(QLD_coastal_erosion_allcomp_diss, QLD_ponds_in_leases)
+```
+
+#The final productive farms were the ones with ponds called : spatial_leases_with_ponds so this shows which ones of them are exposed to SLR
+```{r}
+Exposed_leases_with_ponds_GEE<-st_intersection(QLD_coastal_erosion_allcomp_diss, spatial_leases_with_ponds)
+```
+
+
+#Create a Column and get the proportion of each lease that might be affected following erosion and SLR in 2100 in QLD
+```{r}
+qld_leases_erosion <- qld_leases_erosion %>%
+  mutate(affected_area_m2 = as.numeric(st_area(.)),
+         propaffectedArea= affected_area_m2/lease_area_m2)
+```
+```{r}
+qld_leases_erosion_productiveGT <- qld_leases_erosion_productiveGT %>%
+  mutate(affected_area_m2 = as.numeric(st_area(.)),
+         propaffectedArea= affected_area_m2/lease_area_m2)
+```
+```{r}
+qld_leases_erosion_productiveGEE <- qld_leases_erosion_productiveGEE %>%
+  mutate(affected_area_m2 = as.numeric(st_area(.)),
+         propaffectedArea= affected_area_m2/lease_area_m2)
+```
+
+```{r}
+Exposed_leases_with_ponds_GEE<-Exposed_leases_with_ponds_GEE%>%
+  mutate(affected_area_km2 = as.numeric(st_area(.)),
+         propaffectedArea= affected_area_km2/lease_area_km2)
+
+```
+
+
+
+#Create a shapefile of the intersection between the Aquaculture leases in Queensland and erosion prone areas in Queensland to check how many of them would be potetially affected
+```{r}
+st_write(qld_leases_erosion, here("output_data/RESULTS/qld_leases_erosion.shp"), delete_layer = TRUE)
+```
+```{r}
+st_write(qld_leases_erosion_productiveGT, here("output_data/RESULTS/qld_leases_erosion_productiveGT.shp"), delete_layer = TRUE)
+```
+```{r}
+st_write(qld_leases_erosion_productiveGEE, here("output_data/RESULTS/qld_leases_erosion_productiveGEE.shp"), delete_layer = TRUE)
+```
+
+
+#dissolving by farm ID (grouped) or without doubles
+
+```{r}
+totalleasesaffected<- qld_leases_erosion%>% 
+  group_by(qldglb_)%>%
+  summarise(geometry= st_union(geometry))
+```
+
+#species check  all leases before erosion
+```{r}
+prawn_leases<-qld_leases%>%
+   filter(grepl('Prawn', Species))
+barramundi_leases<-qld_leases%>%
+  filter(grepl('Barra', Species))
+Redclaw_leases<-qld_leases%>%
+  filter(grepl('Red', Species))
+Freshwater_fish_leases<-qld_leases%>%
+   filter(grepl('Freshwater fish', Species))
+Hatchery_leases<-qld_leases%>%
+  filter(grepl('Hatchery', Species))
+Ornamental_leases<-qld_leases%>%
+  filter(grepl('Orna', Species))
+```
+
+
+#  histograms building for leases results
+
+```{r}
+ggplot(qld_leases_erosion) +
+  aes(propaffectedArea, fill = Species
+      ) +
+  geom_histogram() +
+  theme_classic() +
+  scale_fill_viridis_d() +
+  labs(x = "Prop. whole land area affected", 
+       y = "Number of leases")
+```
+
+```{r}
+exposed_prawn_leases<-qld_leases_erosion%>%
+   filter(grepl('Prawn', Species))
+exposed_barramundi_leases<-qld_leases_erosion%>%
+  filter(grepl('Barra', Species))
+exposed_Redclaw_leases<-qld_leases_erosion%>%
+  filter(grepl('Red', Species))
+exposed_Freshwater_fish_leases<-qld_leases_erosion%>%
+   filter(grepl('Freshwater fish', Species))
+exposed_Hatchery_leases<-qld_leases_erosion%>%
+  filter(grepl('Hatchery', Species))
+exposed_Ornamental_leases<-qld_leases_erosion%>%
+  filter(grepl('Orna', Species))
+```
+
+```{r}
+st_write(exposed_prawn_leases, here("output_data/RESULTS/exposure_by_lease/exposed_prawn_leases.gpkg"), delete_layer = TRUE)
+st_write(exposed_barramundi_leases, here("output_data/RESULTS/exposure_by_lease/exposed_barramundi_leases.gpkg"), delete_layer = TRUE)
+st_write(exposed_Redclaw_leases, here("output_data/RESULTS/exposure_by_lease/exposed_Redclaw_leases.gpkg"), delete_layer = TRUE)
+st_write(exposed_Freshwater_fish_leases, here("output_data/RESULTS/exposure_by_lease/exposed_Freshwater_fish_leases.gpkg"), delete_layer = TRUE)
+st_write(exposed_Hatchery_leases, here("output_data/RESULTS/exposure_by_lease/exposed_Hatchery_leases.gpkg"), delete_layer = TRUE)
+st_write(exposed_Ornamental_leases, here("output_data/RESULTS/exposure_by_lease/exposed_Ornamental_leases.gpkg"), delete_layer = TRUE)
+```
+```{r}
+files_whole<-list.files(here("output_data/RESULTS/exposure_by_lease"), full.names = T)
+
+all_whole<-lapply(files_whole, read_sf)
+
+all_df_whole<-do.call(rbind, all_whole)
+  
+all_df2_whole<-all_df_whole %>% 
+  as.data.frame(.) %>% 
+  select(qldglb_, Species, Authority, affected_area_m2, lease_area_m2, propaffectedArea) %>%
+rename(affected_area_proportion= propaffectedArea )
+
+```
+#check these before running always
+```{r}
+all_df2_whole[92,2]<- "Redclaw"
+all_df2_whole[28,2]<- "Hatchery"
+all_df2_whole[29,2]<- "Hatchery"
+all_df2_whole[30,2]<- "Hatchery"
+all_df2_whole[31,2]<- "Hatchery"
+all_df2_whole[32,2]<- "Hatchery"
+all_df2_whole[33,2]<- "Hatchery"
+all_df2_whole[63,2]<- "Prawn/Redclaw"
+all_df2_whole[91,2]<- "Prawn/Redclaw"
+
+
+```
+
+```{r}
+ggplot(all_df2_whole) +
+  aes(affected_area_proportion, fill= Species) +
+  geom_histogram() +
+  theme_classic() +
+  scale_fill_viridis_d() +
+  labs(x = "Prop. of Land in Leases affected", 
+       y = "Number of Leases")
+```
+```{r}
+ggplot(all_df2_whole) +
+  aes(affected_area_proportion, fill = Species) +
+  geom_histogram() +
+  theme_classic() +
+  scale_fill_viridis_d(option = "plasma") +
+  labs(x = "Prop. of each lease affected", 
+       y = "Number of leases") +
+  theme(
+    axis.title.x = element_text(size = 16),  # Increase X axis title size
+    axis.title.y = element_text(size = 16),  # Increase Y axis title size
+    axis.text.x = element_text(size = 14),   # Increase X axis text size
+    axis.text.y = element_text(size = 14)    # Increase Y axis text size
+)
+```
+
+
+```{r}
+qld_leases_erosion_percent<-qld_leases_erosion%>%
+  mutate(percentage= propaffectedArea*100)
+```
+```{r}
+qld_leases_erosion_productiveGT_percent<-qld_leases_erosion_productiveGT%>%
+  mutate(percentage= propaffectedArea*100)
+```
+```{r}
+qld_leases_erosion_productiveGEE_percent<-qld_leases_erosion_productiveGEE%>%
+  mutate(percentage= propaffectedArea*100)
+```
+
+
+
+```{r}
+Exposed_leases_with_ponds_percent<-Exposed_leases_with_ponds_GEE%>%
+  mutate(percentage= propaffectedArea*100)
+```
+
+
+```{r}
+tmap_mode("plot")+
+  tm_shape(QLD_map) +
+  tm_polygons(col= "gray", alpha=0.2)+
+  tm_shape(shp = qld_leases_erosion_percent) +
+ tm_bubbles(size = 0.3, 
+            col = "percentage",
+           title.col = "% of the area exposed by 2100",
+           palette = viridis(10),
+           style= "quantile")+
+tm_layout(legend.position = c("right", "top"),
+           inner.margins = c(0.1, 0.1, 0.1, 0.3))
+
+```
+```{r}
+tmap_mode("plot") +
+  tm_shape(QLD_map) +
+  tm_polygons(col = "gray", alpha = 0.2) +
+  tm_shape(shp = qld_leases_erosion_percent) +
+  tm_bubbles(size = 0.3, 
+             col = "percentage",
+             title.col = "% of the area exposed by 2100",
+             palette = viridis(10),
+             style = "quantile") +
+  tm_layout(legend.position = c("right", "top"),
+            inner.margins = c(0.1, 0.1, 0.1, 0.3),
+            title.size = 1.5)  # Adjust the size value as needed
+```
+```{r}
+
+
+# Assuming QLD_map and qld_leases_erosion_percent are sf objects
+# Plot base map
+ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = qld_leases_erosion_percent, aes(geometry = geometry, color = -percentage), 
+             alpha = 0.8, stat = "sf_coordinates") +  # Bubbles with size and color mapped
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the size range of the bubbles
+  scale_color_viridis_c(name = "% of the area exposed by 2100", option = "viridis") +  # Color scale with viridis palette and title
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position =  "right",  # Adjust legend position
+    legend.title = element_text(size = 12),  # Adjust legend title size
+    plot.margin = margin(10, 30, 10, 10)  # Adjust plot margins
+    )
+
+
+```
+
+```{r}
+
+# Assuming QLD_map and qld_leases_erosion_percent are sf objects
+# Plot base map
+ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = qld_leases_erosion_percent, aes(geometry = geometry, color = -percentage), 
+             alpha = 0.8, stat = "sf_coordinates") +  # Bubbles with size and color mapped
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the size range of the bubbles
+  scale_color_viridis_c(name = "% of the area exposed by 2100", option = "plasma") +  # Color scale with viridis palette and title
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position =  "right",  # Adjust legend position
+    legend.title = element_text(size = 12),  # Adjust legend title size
+    plot.margin = margin(10, 30, 10, 10)  # Adjust plot margins
+    )
+
+
+```
+
+
+```{r}
+Leases_exposure_hotspots<-ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = qld_leases_erosion_percent, aes(geometry = geometry, color = percentage), 
+             alpha = 0.8, stat = "sf_coordinates") +  # Bubbles with color mapped
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the size range of the bubbles
+  scale_color_viridis_c(name = "Percentage of the leases exposed by 2100", option = "plasma") +  # Color scale with viridis palette and title
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position =  "bottom",  # Adjust legend position
+    legend.title = element_text(size = 12),  # Adjust legend title size
+    plot.margin = margin(10, 30, 10, 10)  # Adjust plot margins
+  ) +
+  labs(x = "Longitude", y = "Latitude")  # Add labels to the x and y axes
+
+```
+#plot leases exposure hotspots
+```{r}
+plot(Leases_exposure_hotspots)
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = qld_leases_erosion_productiveGT_percent, aes(geometry = geometry, color = -percentage), 
+             alpha = 0.8, stat = "sf_coordinates") +  # Bubbles with color mapped
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the size range of the bubbles
+  scale_color_viridis_c(name = "percentage of area exposed by 2100", option = "plasma") +  # Color scale with viridis palette and title
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position =  "right",  # Adjust legend position
+    legend.title = element_text(size = 12),  # Adjust legend title size
+    plot.margin = margin(10, 30, 10, 10)  # Adjust plot margins
+  ) +
+  labs(x = "Longitude", y = "Latitude")  # Add labels to the x and y axes
+
+```
+```{r}
+ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = qld_leases_erosion_productiveGEE_percent, aes(geometry = geometry, color = -percentage), 
+             alpha = 0.8, stat = "sf_coordinates") +  # Bubbles with color mapped
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the size range of the bubbles
+  scale_color_viridis_c(name = "% of the area exposed by 2100", option = "viridis") +  # Color scale with viridis palette and title
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position =  "right",  # Adjust legend position
+    legend.title = element_text(size = 12),  # Adjust legend title size
+    plot.margin = margin(10, 30, 10, 10)  # Adjust plot margins
+  ) +
+  labs(x = "Longitude", y = "Latitude")  # Add labels to the x and y axes
+
+```
+```{r}
+tmap_mode("plot")+
+  tm_shape(QLD_map) +
+  tm_polygons(col= "gray", alpha=0.2)+
+  tm_shape(shp = qld_leases_erosion_productiveGEE_percent) +
+ tm_bubbles(size = 0.3, 
+            col = "percentage",
+           title.col = "% of the area exposed by 2100",
+           palette = viridis(10),
+           style= "quantile")+
+tm_layout(legend.position = c("right", "top"),
+           inner.margins = c(0.1, 0.1, 0.1, 0.3))
+
+```
+
+```{r}
+tmap_mode("plot")+
+  tm_shape(QLD_map) +
+  tm_polygons(col= "gray", alpha=0.2)+
+  tm_shape(shp = qld_leases_erosion_productiveGT_percent) +
+ tm_bubbles(size = 0.3, 
+            col = "percentage",
+           title.col = "% of the area exposed by 2100",
+           palette = viridis(10),
+           style= "quantile")+
+tm_layout(legend.position = c("right", "top"),
+           inner.margins = c(0.1, 0.1, 0.1, 0.3))
+
+```
+#plots with productive leases that show ponds in GEE
+```{r}
+# Ensure percentage is numeric and represents a value from 0 to 100
+Exposed_leases_with_ponds_percent$percentage <- as.numeric(Exposed_leases_with_ponds_percent$percentage)
+
+# If the values are too large, you may need to divide by a factor to scale them correctly
+# For example, if they are counts and you want them as percentages, you might do:
+# Exposed_leases_with_ponds_percent$percentage <- Exposed_leases_with_ponds_percent$percentage / 1e6
+
+# Check the range of the values
+summary(Exposed_leases_with_ponds_percent$percentage)
+
+```
+```{r}
+# Normalize percentage values to be between 0 and 100
+total_value <- max(Exposed_leases_with_ponds_percent$percentage, na.rm = TRUE)
+
+# Create new percentage column
+Exposed_leases_with_ponds_percent$normalized_percentage <- (Exposed_leases_with_ponds_percent$percentage / total_value) * 100
+
+# Check the new range
+summary(Exposed_leases_with_ponds_percent$normalized_percentage)
+```
+
+#final map of leases exposed that contain ponds
+```{r}
+productive_Leases_exposure_hotspots <- ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = Exposed_leases_with_ponds_percent, aes(geometry = geometry, color = normalized_percentage), 
+             alpha = 0.8, stat = "sf_coordinates", size = 3) +  # Adjust size if needed
+  scale_color_viridis_c(
+    name = "Percentage of Leases\n Exposed by 2100",
+    option = "plasma",
+    limits = c(0, 100),
+    breaks = seq(0, 100, 20),  # Adjust breaks to your preference
+    labels = scales::percent_format(scale = 1)  # Format as percentage
+  ) +
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(10, 30, 10, 10)
+  ) +
+  labs(x = "Longitude", y = "Latitude")
+
+# Print the plot
+print(productive_Leases_exposure_hotspots)
+```
+
+
+#test all leases with ponds exposure even without known species
+```{r}
+ggplot(Exposed_leases_with_ponds_percent) +
+  aes(normalized_percentage, fill = Species) +
+  geom_histogram() +
+  theme_classic() +
+  scale_fill_viridis_d(option = "plasma", na.value = "grey50") +
+  labs(x = "Prop. of each lease affected", 
+       y = "Number of leases") +
+  theme(
+    axis.title.x = element_text(size = 16),  # Increase X axis title size
+    axis.title.y = element_text(size = 16),  # Increase Y axis title size
+    axis.text.x = element_text(size = 14),   # Increase X axis text size
+    axis.text.y = element_text(size = 14)    # Increase Y axis text size
+)
+```
+
+#the productive areas by 1/3
+```{r}
+ggplot(Exposed_leases_with_ponds_percent) +
+  aes(cut(normalized_percentage, breaks = c(0, 33.3, 66.6, 100)), fill = Species) +
+  geom_bar() +
+  theme_classic() +
+  scale_fill_viridis_d(option = "plasma", na.value = "grey50") +
+  labs(x = "Prop. of each lease affected", 
+       y = "Number of leases") +
+  theme(
+    axis.title.x = element_text(size = 16),  # Increase X axis title size
+    axis.title.y = element_text(size = 16),  # Increase Y axis text size
+    axis.text.x = element_text(size = 14),   # Increase X axis text size
+    axis.text.y = element_text(size = 14)    # Increase Y axis text size
+)
+```
+
+
+
+#the productive areas by half
+```{r}
+ggplot(Exposed_leases_with_ponds_percent) +
+  aes(cut(normalized_percentage, breaks = c(0, 50, 100)), fill = Species) +
+  geom_bar() +
+  theme_classic() +
+  scale_fill_viridis_d(option = "plasma", na.value = "grey50") +
+  labs(x = "Prop. of each lease affected", 
+       y = "Number of leases") +
+  theme(
+    axis.title.x = element_text(size = 16),  # Increase X axis title size
+    axis.title.y = element_text(size = 16),  # Increase Y axis text size
+    axis.text.x = element_text(size = 14),   # Increase X axis text size
+    axis.text.y = element_text(size = 14)    # Increase Y axis text size
+)
+```
+#details by species considering the full land dedicated to aquaculture or at leases leased for aquaculture
+
+#amount of farms/leases exposed by species and the amount of area in each lease and amount of area exposed 
+
+#data on prawn leases and farms
+```{r}
+unique(prawn_leases$qldglb_)#55
+unique(prawn_leases$Authority)#39
+unique(exposed_prawn_leases$qldglb_)#54
+unique(exposed_prawn_leases$Authority)#38
+```
+
+```{r}
+sum(prawn_leases$lease_area_km2)#39.02
+sum(exposed_prawn_leases$lease_area_km2)#38.60
+sum(exposed_prawn_leases$lease_area_km2)/sum(prawn_leases$lease_area_km2)*100
+
+```
+
+#barramundi leases and farms
+```{r}
+#leases
+unique(barramundi_leases$qldglb_)#50
+unique(exposed_barramundi_leases$qldglb_)#22
+#farms
+unique(barramundi_leases$Authority)#34
+unique(exposed_barramundi_leases$Authority)#16
+```
+
+```{r}
+sum(barramundi_leases$lease_area_km2)#143.18
+sum(exposed_barramundi_leases$lease_area_km2)#11.12
+sum(exposed_barramundi_leases$lease_area_km2)/sum(barramundi_leases$lease_area_km2)*100 #7.7%
+```
+#red claw leases and farms
+```{r}
+#leases
+unique(Redclaw_leases$qldglb_)#75
+unique(exposed_Redclaw_leases$qldglb_)#6
+#farms
+unique(Redclaw_leases$Authority)#66
+unique(exposed_Redclaw_leases$Authority)#6
+```
+
+```{r}
+sum(Redclaw_leases$lease_area_km2)#105.2
+sum(exposed_Redclaw_leases$lease_area_km2)#2.07
+sum(exposed_Redclaw_leases$lease_area_km2)/sum(Redclaw_leases$lease_area_km2)*100 #1.96%
+```
+#Freshwater fish leases and farms
+```{r}
+#leases
+unique(Freshwater_fish_leases$qldglb_)#39
+unique(exposed_Freshwater_fish_leases$qldglb_)#5
+#farms
+unique(Freshwater_fish_leases$Authority)#34
+unique(exposed_Freshwater_fish_leases$Authority)#4
+```
+
+```{r}
+sum(Freshwater_fish_leases$lease_area_km2)#23.1
+sum(exposed_Freshwater_fish_leases$lease_area_km2)#1.59
+sum(exposed_Freshwater_fish_leases$lease_area_km2)/sum(Freshwater_fish_leases$lease_area_km2)*100 #  6.89%
+```
+#Hatchery leases and farms
+```{r}
+#leases
+unique(Hatchery_leases$qldglb_)#10
+unique(exposed_Hatchery_leases$qldglb_)#6
+#farms
+unique(Hatchery_leases$Authority)#8
+unique(exposed_Hatchery_leases$Authority)#4
+```
+
+```{r}
+sum(Hatchery_leases$lease_area_km2)#1.84
+sum(exposed_Hatchery_leases$lease_area_km2)#0.69
+sum(exposed_Hatchery_leases$lease_area_km2)/sum(Hatchery_leases$lease_area_km2)*100 # 37.80%
+```
+#Ornamentals leases and farms
+```{r}
+#leases
+unique(Ornamental_leases$qldglb_)#13
+unique(exposed_Ornamental_leases$qldglb_)#1
+#farms
+unique(Ornamental_leases$Authority)#12
+unique(exposed_Ornamental_leases$Authority)#1
+```
+
+```{r}
+sum(Ornamental_leases$lease_area_km2)#
+sum(exposed_Ornamental_leases$lease_area_km2)#
+sum(exposed_Ornamental_leases$lease_area_km2)/sum(Ornamental_leases$lease_area_km2)*100 # %
+```
+#difference between leases with known species and leases that we don't know the species are due to not having available data on all species that have leases - most of the time due to not being a productive lease
+```{r}
+sum(Ornamental_leases$lease_area_km2)+sum(Hatchery_leases$lease_area_km2)+sum(Freshwater_fish_leases$lease_area_km2)+sum(Redclaw_leases$lease_area_km2)+sum(barramundi_leases$lease_area_km2)+sum(prawn_leases$lease_area_km2)#318.30
+```
+```{r}
+sum(qld_leases$lease_area_km2)
+```
+
+

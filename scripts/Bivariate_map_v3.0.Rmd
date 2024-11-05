@@ -1,0 +1,249 @@
+---
+title: Bivariate map of prawn and Barramundi in QLD"
+author: Marina
+date: "2024-07-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+install.packages("viridisLite")
+```
+
+
+```{r}
+
+library(viridisLite)
+install.packages("png")
+install.packages("grid")
+install.packages("magick")
+```
+
+```{r}
+library(sf)
+library(here)
+library(tidyverse)
+library(biscale)
+library(tmap)
+library(dplyr)
+library(viridis)
+library(ggplot2)
+library(png)
+library(grid)
+library(ggrepel)
+
+```
+
+
+```{r}
+
+dat2<-st_read(here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/prawn_ponds_in_leases.gpkg"))%>% 
+  as.data.frame(.) %>%  # make this none spatial - we only need one of them to be spatial
+  select(Species, Authority, expected_production, -geom) # remove columns we don't need
+```
+
+
+```{r}
+dat3<-st_read(here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Prawn_ponds_leases.gpkg")) %>% 
+  select(Species, Authority, affected_area_km2, pond_area_km2, affected_area_proportion) # remove column we don't need
+```
+# Join production amount with area affected
+
+```{r}
+prod_aff<-full_join(dat3, dat2) # some farms arent affected-  there are 3 rows when we join here that have production but not area affected. Check these
+
+# removing not affected areas
+
+prod_aff2<-prod_aff %>% 
+  filter(!is.na(pond_area_km2) == T)
+```
+
+# load a map of QLD
+```{r}
+AUS_map<-st_read(here("raw_data/AustralianStates_SHP"))
+AUS_map_reproj<-st_transform(AUS_map, 3577)
+```
+```{r}
+QLD_map<-AUS_map_reproj%>%
+  filter(STE_NAME21=='Queensland')
+```
+
+
+
+# Add classes for bivariate plot
+
+```{r}
+bi_dat<-bi_class(prod_aff2, x = affected_area_proportion, y = expected_production, style = "quantile", dim = 4)
+```
+
+```{r}
+bi_dat2<-bi_class(prod_aff2, x = affected_area_km2, y = expected_production, style = "quantile", dim = 4)
+```
+
+
+```{r}
+dat_pts<-st_centroid(bi_dat)
+
+dat_pts$bi_class<-factor(dat_pts$bi_class,
+                levels = c("1-4", "1-3", "1-2", "1-1", "2-4", "2-3", "2-2", "2-1", "3-4", "3-3", "3-2", "3-1", "4-4", "4-3", "4-2", "4-1"))
+
+
+```
+
+```{r}
+map<-ggplot() +
+  geom_sf(data = QLD_map, col="lightgrey", alpha=0.2)+
+  geom_sf(data = dat_pts, mapping = aes(color = bi_class), size = 2, show.legend = FALSE) +
+  bi_scale_color(pal = "DkViolet", dim = 3) +
+  theme_void() 
+
+map
+```
+#test to see if I can plot the higher values on top of others
+```{r}
+
+
+dat_pts <- st_centroid(bi_dat)
+
+
+# Specify the desired order for bi_class
+desired_order <- c("1-1", "1-2", "2-1", "2-2", "3-1", "1-3", "1-4", "4-1",
+                   "2-3", "3-2","2-4","4-2","3-3","3-4","4-3", "4-4")
+
+# Convert bi_class to a factor with the specified levels
+dat_pts$bi_class <- factor(dat_pts$bi_class, levels = desired_order)
+
+
+# Arrange the data such that higher bi_class values are last
+dat_pts <- dat_pts %>%
+  arrange(bi_class)
+
+map <- ggplot() +
+  geom_sf(data = QLD_map, col= "lightgray", alpha=0.1) +
+  geom_sf(data = dat_pts, mapping = aes(color = bi_class), size = 2, show.legend = FALSE) +
+  bi_scale_color(pal = "DkViolet", dim = 3) +
+  theme_void()
+
+print(map)
+```
+
+
+```{r}
+legend <- bi_legend(pal = "DkViolet2", dim = 4, xlab = "Area affected", ylab = "Production", size = 15)
+legend
+```
+
+```{r}
+dat4<- st_read(here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/ Barramundi_ponds_in_leases.gpkg"))%>% 
+ as.data.frame(.) %>%  # make this none spatial - we only need one of them to be spatial
+ select(Species, Authority, expected_production, -geom) # remove columns we don't need, the expctd_ column is the expected production 
+```
+```{r}
+dat5<-st_read(here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Barramundi_ponds_leases.gpkg")) %>% 
+  select(Species, Authority, affected_area_km2, pond_area_km2, affected_area_proportion) # remove columns we don't need
+```
+```{r}
+barra_prod_aff<-full_join(dat5, dat4) 
+
+barra_prod_aff2<-barra_prod_aff %>% 
+  filter(!is.na(pond_area_km2) == T)
+```
+
+# Add classes for bivariate plot
+
+```{r}
+barra_bi_dat<-bi_class(barra_prod_aff2, x = affected_area_proportion, y = expected_production, style = "quantile", dim = 4)
+```
+
+```{r}
+barra_bi_dat2<-bi_class(barra_prod_aff2, x = affected_area_km2, y = expected_production, style = "quantile", dim = 4)
+```
+
+```{r}
+dat_pts_b <- st_centroid(barra_bi_dat)
+
+
+# Specify the desired order for bi_class (that is in order to plot the most affected production and area on top of the others)
+desired_order <- c("1-1", "1-2", "2-1", "2-2", "3-1", "1-3", "1-4","4-1",
+                   "2-3", "3-2","2-4","4-2","3-3","3-4","4-3", "4-4")
+
+# Convert bi_class to a factor with the specified levels
+dat_pts_b$bi_class <- factor(dat_pts_b$bi_class, levels = desired_order)
+
+
+# Arrange the data such that higher bi_class values are last
+dat_pts_b <- dat_pts_b %>%
+  arrange(bi_class)
+```
+
+
+```{r}
+map_barra<- ggplot() +
+  geom_sf(data = QLD_map, col= "lightgray", alpha=0.1) +
+  geom_sf(data = dat_pts_b, mapping = aes(color = bi_class), size = 2, show.legend = FALSE) +
+  bi_scale_color(pal = "DkViolet", dim = 3) +
+  theme_void()
+
+print(map_barra)
+```
+```{r}
+# Load the image of a barramundi
+barramundi <- readPNG(here("figures/lates-calcarifer-barramundi.png"))
+barra<- rasterGrob(barramundi, interpolate = TRUE)
+```
+
+```{r}
+# Load the image of a prawn
+prawn <- readPNG(here("figures/penaeus-monodon-tiger-prawn-adult.png"))
+
+# Convert the image to a rasterGrob
+tiger_prawn <- rasterGrob(prawn, interpolate = TRUE)
+
+```
+
+#checking which regions are expected to be more affected by SLR
+```{r}
+LGA<- st_read(here("raw_data/LGA/Local_Government_Areas.shp"))
+```
+
+```{r}
+LGA_reproj<- st_transform(LGA, 3577)
+```
+
+
+```{r}
+exposed_bi_dat_council_barra<- st_intersection(LGA_reproj, barra_bi_dat2)
+```
+
+```{r}
+
+# Calculate centroids for each LGA (for label positioning)
+mapped_data_centroids_LGA <- exposed_bi_dat_council_barra %>%
+  mutate(centroid = st_centroid(geometry)) %>%
+  st_as_sf()
+
+# Extract the coordinates of the centroids
+centroid_coords <- st_coordinates(mapped_data_centroids_LGA$centroid)
+
+# Convert the centroids to a data frame and add the LGA names
+centroid_df_LGA <- data.frame(centroid_coords, LGA= exposed_bi_dat_council_barra$LGA)
+```
+
+
+```{r}
+map_barra_LGA<- ggplot() +
+  geom_sf(data = LGA_reproj, col= "lightgray", alpha=0.1) +
+  geom_sf(data = dat_pts_b, mapping = aes(color = bi_class), size = 2, show.legend = FALSE) +
+  bi_scale_color(pal = "DkViolet", dim = 3) +
+  theme_void() +  # Minimal theme
+  geom_text_repel(data = centroid_df_LGA, aes(X, Y, label = LGA), size = 2, color = "black", max.overlaps = Inf)  # Add LGA names
+
+print(map_barra_LGA)
+```
+
+
+```{r}

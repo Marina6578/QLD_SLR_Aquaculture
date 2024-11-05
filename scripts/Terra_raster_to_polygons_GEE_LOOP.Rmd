@@ -1,0 +1,131 @@
+---
+title: "terra_GEE raster to polygons loop"
+output: html_document
+date: "2024-02-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#https://rspatial.github.io/terra/reference/terra-package.html
+
+```{r}
+library(terra)
+library(rgdal)
+library(raster)
+library(sf)
+library(tidyverse)
+library(here)
+library(tmap)
+library(ggplot2)
+library(tidyterra)
+library(leaflet)
+library(tmaptools)
+library(dplyr)
+```
+
+
+#making the file list to loop all of them 
+```{r}
+gee_files<-list.files(here("GEE_data"), pattern = "s2_metrics", full.names = TRUE)
+
+gee_files2<-gee_files[grep(gee_files, pattern = ".ovr")]
+gee_files2b<-gee_files[grep(gee_files, pattern = ".aux.xml")]
+
+gee_files3a<-gee_files[!gee_files %in% gee_files2b]
+gee_files3<-gee_files3a[!gee_files3a %in% gee_files2]
+
+
+```
+#for loops 
+#if you want to start in other number just redo from that on #i in number(where the is a 1 now) you want to start from (change back to 1 when finished to keep the code)
+#if you want the 20th percentile then substitute the NDWI layer by : "NDWI_p20" 
+```{r}
+
+for(i in 1:length(gee_files3)){
+  print(i)
+  gee_geotiff<-terra::rast(gee_files3[[i]])
+  NDWI_p80<- subset(gee_geotiff, "NDWI_p80")
+  NDWI_p80[NDWI_p80 == 0]<-NA
+  if(is.na(NDWI_p80@cpp$range_max) == TRUE){
+  next
+  }else{
+  Poly_NDWI_p80 <- terra::as.polygons(NDWI_p80)
+Poly_NDWI_p80_sf<-sf::st_as_sf(Poly_NDWI_p80) %>% 
+  st_make_valid(.)
+  num<-as.numeric(gsub(".*?([0-9]+).*", "\\1", gee_files3[[i]]))             
+  s <- gee_files3[[i]]
+ s1 <- unlist(strsplit(s, split='-', fixed=TRUE))
+ num1<-s1[2]
+ num2<-s1[3]
+ test<-unlist(strsplit(num2, split='.', fixed=TRUE))
+ num3<-test[1]
+ 
+ 
+ st_write(Poly_NDWI_p80_sf, here(paste0("output_data/GEE_shp_20_21/NDWI_p80_",num1,"-",num3,".shp")), append = TRUE)
+
+}
+ 
+}
+
+
+```
+
+#in case you need to find one among others in the same file then do this , the last part of the path is the name of the file you are looking for
+```{r}
+#which(gee_files3 == here("GEE_data/s2_metrics_export_vizualization_bla-0000172800-0000110592.tif"))
+```
+
+
+
+#stick all the shapefiles from the GEE output 
+
+#worked properly from here to combined
+#call folder with files
+```{r}
+shp_files<-list.files(here("D:/Documents_HD/QLD_SLR_Aquaculture/output_data/GEE_shp_20_21"), pattern = "NDWI_p80", full.names = TRUE)
+```
+
+#separate in the folder the files with different endings that arent .shp
+```{r}
+shp_filesdbf<-shp_files[grep(shp_files, pattern = ".dbf")]
+shp_filesprj<-shp_files[grep(shp_files, pattern = ".prj")]
+shp_filesshx<-shp_files[grep(shp_files, pattern = ".shx")]
+```
+
+#make lists subtracting from those done above
+```{r}
+shp_fileswithoutdbf<-shp_files[!shp_files %in% shp_filesdbf]
+shp_fileswithoutdbfprj<-shp_fileswithoutdbf[!shp_fileswithoutdbf %in% shp_filesprj]
+shp_fileswithoutdbfprjshx<- shp_fileswithoutdbfprj[!shp_fileswithoutdbfprj %in% shp_filesshx]
+```
+
+#generate a list 
+```{r}
+shapes<-list()
+```
+
+
+#read all the shapefiles in a loop
+```{r}
+for (n in 1:length(shp_fileswithoutdbfprjshx)) {
+  shapes[[n]] <- st_read(shp_fileswithoutdbfprjshx[n])}
+ 
+if (length(shp_fileswithoutdbfprjshx) == 0) {
+  stop("No shapefiles found in the folder.")
+}
+```
+#combined all 37 shapefiles
+```{r}
+combined_shapefile <- bind_rows(shapes)
+```
+
+#save the combined shapefile
+```{r}
+st_write(combined_shapefile, here("output_data/QLD_aqua_ponds_combined_shapefile_NDWI_p80.shp"), delete_layer = TRUE)
+```
+
+
+

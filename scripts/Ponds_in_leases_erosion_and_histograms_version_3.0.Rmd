@@ -1,0 +1,1199 @@
+---
+title : "ponds in leases_erosion_check"
+output: html_document
+date: "2024-september"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#load packages I will need for that analysis
+```{r}
+library(tidyverse)
+library(here)
+library(tmap)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(ggrepel)
+```
+
+```{r}
+Final_species2024_new<-st_read(here("output_data/RESULTS/Final_species2024_new.gpkg"))
+```
+#filter out the leaseswe have found that are not productive to make a final leases layer
+```{r}
+values_to_exclude<- c("2020BC0019", "2007BC0184")
+```
+
+# Get the row indices to exclude using the grep() function
+```{r}
+rows_to_exclude <- grep(paste(values_to_exclude, collapse = "|"), Final_species2024_new$Authority)
+```
+# Filter the data frame
+```{r}
+Final_species2024_leases <- Final_species2024_new[-rows_to_exclude, ]
+```
+
+#these are the productive ponds that use ponds system or any water body in open areas that could be detected by GEE and Ground truthed by our team
+
+# load data
+#Ponds obtained afte Google Earth Engine (GEE) 
+#in this code we are using NDWI percentile 20th (to find water bodies that could be dry sometimes)+ 80th Percentile (areas with constant water filling) +NDWI sum (water bodies generally filled with water)
+
+```{r}
+QLD_aqua_ponds_combined_shapefile_NDWI_p20<-st_read(here("output_data/QLD_aqua_ponds_combined_shapefile_NDWI_p20.shp"))
+```
+```{r}
+QLD_aqua_ponds_combined_shapefile_NDWI_p80<-st_read(here("output_data/QLD_aqua_ponds_combined_shapefile_NDWI_p80.shp"))
+```
+```{r}
+QLD_aqua_ponds_combined_shapefile_NDWI_sum_raw<- st_read(here("raw_data/GEE_exports_20_21/GEE_vectors_QLDCOAST_20_21/ndwi_sum_thresh_vector_QLDCOAST_20_21/ndwi_sum_thresh_vector_QLDCOAST_aqua_20_21.shp"))
+```
+```{r}
+QLD_aqua_ponds_combined_shapefile_NDWI_sum<-st_transform(QLD_aqua_ponds_combined_shapefile_NDWI_sum_raw, 3577)
+```
+
+#bind all the pond results together_ all of them were outputs of Google Earth Engine (GEE) with the index NDWI
+
+```{r}
+QLD_ponds_GEEOutput<- bind_rows(QLD_aqua_ponds_combined_shapefile_NDWI_sum, QLD_aqua_ponds_combined_shapefile_NDWI_p80, QLD_aqua_ponds_combined_shapefile_NDWI_p20)
+```
+
+#reprojected the data to Australian Albers CRS 3577
+
+```{r}
+QLD_ponds_GEE_reproj<-st_transform(QLD_ponds_GEEOutput, 3577)
+```
+
+#dissolve the ponds layer 
+```{r}
+QLD_GEE_ponds_diss<-QLD_ponds_GEE_reproj%>%
+  mutate(diss = 1) %>% #create column to dissolve by
+  # group_by(diss) %>% #group by column you created
+  summarise(diss2 = sum(diss, na.rm = T)) #combine column into one new variable and ignore NA values
+  
+```
+
+```{r}
+QLD_ponds_in_leases<-st_intersection(QLD_GEE_ponds_diss, Final_species2024_leases)
+```
+
+
+#calculate the area of the ponds in each farm
+```{r}
+QLD_ponds_in_leases<-QLD_ponds_in_leases%>%
+  mutate(pond_area_m2 = as.numeric(st_area(.)))%>%
+ mutate(pond_area_km2 = pond_area_m2/1e6)%>%
+  mutate(pond_area_hectares = pond_area_m2/1e4)
+```
+
+```{r}
+st_write(QLD_ponds_in_leases, here("output_data/RESULTS/QLD_ponds_in_leases.gpkg"), delete_layer = TRUE) 
+```
+
+
+#size of ponds all together in m2, km2 and hectares 
+```{r}
+area_of_ponds_in_leases_m2<-sum(QLD_ponds_in_leases$pond_area_m2)
+area_of_ponds_in_leases_km2<-sum(QLD_ponds_in_leases$pond_area_km2)
+area_of_ponds_in_leases_hectares<-sum(QLD_ponds_in_leases$pond_area_hectares)
+```
+
+#DISSOLVED - you can also load data already dissolved that you have done in the code earlier, we had already transformed it to Australian Alvers CRS 3577 as well. 
+
+```{r}
+QLD_coastal_erosion_allcomp_diss<-st_read(here("output_data/QLD_coastal_erosion_allcomp_diss.shp"))
+```
+
+#check if it's better to clean the columns before intersecting
+```{r}
+QLD_coastal_erosion<-QLD_coastal_erosion_allcomp_diss%>%
+  select(geometry)
+```
+
+
+#separate by species group in each farm before intersecting for better control
+# PRAWN (1056 tonnes/km2 is the mean)production and the 20% mortality rate gives us an 845 tonnes per km2 yield
+```{r}
+prawn_ponds_in_leases<-QLD_ponds_in_leases%>%
+ filter(grepl('Prawn', Species))%>%
+mutate(pond_area_m2 = as.numeric(st_area(.)))%>%
+mutate(pond_area_km2 = pond_area_m2/1e6)%>%
+mutate(pond_area_hectares = pond_area_m2/1e4)%>%
+mutate(expected_production= pond_area_km2* 845)
+```
+
+```{r}
+sum(prawn_ponds_in_leases$pond_area_m2)
+sum(prawn_ponds_in_leases$pond_area_hectares)
+sum(prawn_ponds_in_leases$pond_area_km2)
+sum(prawn_ponds_in_leases$expected_production)
+```
+
+#if I want to know how much pond area exists in QLD for each species then I can do this
+
+#Barramundi by farm
+#Using the mean values 2.25kg/m2 being then 22.5 ton per hectare (15 to 30tonnes/hectare mean being 22.5 or 2250 tonnes per km2)
+```{r}
+Barramundi_ponds_in_leases<- QLD_ponds_in_leases%>%
+  filter(grepl('Barramundi', Species))%>%
+   mutate(pond_area_m2 = as.numeric(st_area(.)))%>%
+mutate(pond_area_km2 = pond_area_m2/1e6)%>%
+  mutate(expected_production= pond_area_km2* 2250)%>%
+  mutate(pond_area_hectares = pond_area_m2/1e4)
+
+```
+#if there was no impact of SLR then this is the expected Barramundi production
+```{r}
+sum(Barramundi_ponds_in_leases$pond_area_m2)
+sum(Barramundi_ponds_in_leases$pond_area_hectares) 
+sum(Barramundi_ponds_in_leases$pond_area_km2)
+sum(Barramundi_ponds_in_leases$expected_production)
+```
+
+#REDCLAW 
+#Redclaw by farm
+```{r}
+Redclaw_ponds_in_leases<- QLD_ponds_in_leases%>%
+  filter(grepl('Red', Species))%>%
+ mutate(pond_area_m2 = as.numeric(st_area(.)))%>%
+mutate(pond_area_km2 = pond_area_m2/1e6)%>%
+  mutate(pond_area_hectares = pond_area_m2/1e4)
+```
+#if there was no impact of SLR then this is the expected Redclaw area
+```{r}
+sum(Redclaw_ponds_in_leases$pond_area_m2)
+sum(Redclaw_ponds_in_leases$pond_area_hectares)
+sum(Redclaw_ponds_in_leases$pond_area_km2)
+
+```
+#freshwater fish in farms
+```{r}
+Freshwater_fish_ponds_in_leases<- QLD_ponds_in_leases%>%
+  filter(grepl('Freshwater fish', Species))%>%
+ mutate(pond_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(pond_area_km2 = pond_area_m2/1e6) %>%
+  mutate(pond_area_hectares = pond_area_m2/1e4)
+
+```
+#if there was no impact of SLR then this is the expected Freshwater fish ponds area
+```{r}
+sum(Freshwater_fish_ponds_in_leases$pond_area_m2)
+sum(Freshwater_fish_ponds_in_leases$pond_area_hectares)
+sum(Freshwater_fish_ponds_in_leases$pond_area_km2)
+
+```
+
+#HATCHERIES
+
+#hatcheries by farm
+```{r}
+Hatchery_ponds_in_leases<- QLD_ponds_in_leases%>%
+  filter(grepl('Hatchery', Species))%>%
+  mutate(pond_area_m2 = as.numeric(st_area(.)))%>%
+mutate(pond_area_km2 = pond_area_m2/1e6)%>%
+  mutate(pond_area_hectares = pond_area_m2/1e4)
+```
+
+#if there was no impact of SLR then this is the expected hatchery ponds area
+```{r}
+sum(Hatchery_ponds_in_leases$pond_area_m2)
+sum(Hatchery_ponds_in_leases$pond_area_hectares)
+sum(Hatchery_ponds_in_leases$pond_area_km2)
+```
+
+#ORNAMENTAL
+#by farm
+```{r}
+Ornamental_ponds_in_leases<- QLD_ponds_in_leases%>%
+  filter(grepl('Orna', Species))%>%
+  mutate(pond_area_m2 = as.numeric(st_area(.)))%>%
+mutate(pond_area_km2 = pond_area_m2/1e6)%>%
+  mutate(pond_area_hectares = pond_area_m2/1e4)
+
+```
+
+#if there was no impact of SLR then this is the expected ornamental ponds area
+```{r}
+sum(Ornamental_ponds_in_leases$pond_area_m2)
+sum(Ornamental_ponds_in_leases$pond_area_hectares)
+sum(Ornamental_ponds_in_leases$pond_area_km2)
+```
+
+```{r}
+Unknown_species_ponds_in_leases<- QLD_ponds_in_leases%>%
+  filter(grepl(NA, Species))%>%
+ mutate(pond_area_m2 = as.numeric(st_area(.)))%>%
+mutate(pond_area_km2 = pond_area_m2/1e6)%>%
+  mutate(pond_area_hectares = pond_area_m2/1e4)
+```
+
+
+#NOW RUN EXPOSURE OVER EACH GROUP SPECIES
+
+#intersect each species group aquaculture ponds found in GEE separated by FARMS with dissolved coastal erosion layer
+```{r}
+QLD_SLR_erosion_prawn_ponds_leases<-st_intersection(QLD_coastal_erosion, prawn_ponds_in_leases)
+
+QLD_SLR_erosion_Barramundi_ponds_leases<-st_intersection(QLD_coastal_erosion, Barramundi_ponds_in_leases)
+
+QLD_SLR_erosion_Redclaw_ponds_leases<-st_intersection(QLD_coastal_erosion, Redclaw_ponds_in_leases)
+
+QLD_SLR_erosion_Freshwater_fish_ponds_leases<-st_intersection(QLD_coastal_erosion, Freshwater_fish_ponds_in_leases)
+
+QLD_SLR_erosion_Ornamental_ponds_leases<-st_intersection(QLD_coastal_erosion, Ornamental_ponds_in_leases)
+
+QLD_SLR_erosion_Hatchery_ponds_leases<-st_intersection(QLD_coastal_erosion, Hatchery_ponds_in_leases)
+
+
+```
+
+#Create a Column and get the proportion of the ponds in each FARM that might be affected following erosion and SLR in 2100 
+#Check were to do this conversion- mutate(area_km2= affected_area_m2/1e6)
+```{r}
+QLD_SLR_erosion_prawn_ponds_leases<-QLD_SLR_erosion_prawn_ponds_leases%>%
+ ungroup(.) %>%
+   mutate(affected_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(affected_area_km2 = affected_area_m2/1e6)%>%
+  mutate(affected_area_proportion= affected_area_km2/pond_area_km2)%>%
+  mutate(worst=ifelse(affected_area_proportion>=0.1, pond_area_km2, affected_area_proportion))%>%
+   select(qldglb_,pond_area_m2, pond_area_km2, Species, Authority, geometry, affected_area_m2,affected_area_km2, affected_area_proportion, worst)
+```
+
+#sum the areas to check the effect of erosion
+```{r}
+sum(prawn_ponds_in_leases$pond_area_km2)
+sum(QLD_SLR_erosion_prawn_ponds_leases$pond_area_km2)
+sum(QLD_SLR_erosion_prawn_ponds_leases$affected_area_km2)
+sum(QLD_SLR_erosion_prawn_ponds_leases$worst)
+
+```
+
+```{r}
+QLD_SLR_erosion_Barramundi_ponds_leases<-QLD_SLR_erosion_Barramundi_ponds_leases%>%
+   ungroup(.) %>%
+  mutate(affected_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(affected_area_km2 = affected_area_m2/1e6)%>%
+  mutate(affected_area_proportion= affected_area_km2/pond_area_km2)%>%
+  mutate(worst=ifelse(affected_area_proportion>=0.1, pond_area_km2, affected_area_proportion))%>%
+  select(qldglb_,pond_area_m2, pond_area_km2, Species, Authority, geometry, affected_area_m2,affected_area_km2, affected_area_proportion, worst)
+```
+
+#sum the areas to check the effect of erosion
+```{r}
+sum(Barramundi_ponds_in_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Barramundi_ponds_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Barramundi_ponds_leases$affected_area_km2)
+sum(QLD_SLR_erosion_Barramundi_ponds_leases$worst)
+
+```
+
+```{r}
+QLD_SLR_erosion_Redclaw_ponds_leases<-QLD_SLR_erosion_Redclaw_ponds_leases%>%
+ ungroup(.) %>%
+  mutate(affected_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(affected_area_km2 = affected_area_m2/1e6)%>%
+  mutate(affected_area_proportion= affected_area_km2/pond_area_km2)%>%
+  mutate(worst=ifelse(affected_area_proportion>=0.1, pond_area_km2, affected_area_proportion))%>%
+  select(qldglb_,pond_area_m2, pond_area_km2, Species, Authority, geometry, affected_area_m2,affected_area_km2, affected_area_proportion, worst)
+```
+
+#sum the areas to check the effect of erosion
+```{r}
+sum(Redclaw_ponds_in_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Redclaw_ponds_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Redclaw_ponds_leases$affected_area_km2)
+sum(QLD_SLR_erosion_Redclaw_ponds_leases$worst)
+
+```
+
+```{r}
+QLD_SLR_erosion_Freshwater_fish_ponds_leases<-QLD_SLR_erosion_Freshwater_fish_ponds_leases%>%
+   ungroup(.) %>%
+   mutate(affected_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(affected_area_km2 = affected_area_m2/1e6)%>%
+  mutate(affected_area_proportion= affected_area_km2/pond_area_km2)%>%
+  mutate(worst=ifelse(affected_area_proportion>=0.1, pond_area_km2, affected_area_proportion))%>%
+  select(qldglb_,pond_area_m2, pond_area_km2, Species, Authority, geometry, affected_area_m2,affected_area_km2, affected_area_proportion, worst)
+```
+
+#sum the areas to check the effect of erosion
+```{r}
+sum(Freshwater_fish_ponds_in_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Freshwater_fish_ponds_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Freshwater_fish_ponds_leases$affected_area_km2)
+sum(QLD_SLR_erosion_Freshwater_fish_ponds_leases$worst)
+```
+
+```{r}
+QLD_SLR_erosion_Ornamental_ponds_leases<-QLD_SLR_erosion_Ornamental_ponds_leases%>%
+   ungroup(.) %>%
+   mutate(affected_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(affected_area_km2 = affected_area_m2/1e6)%>%
+  mutate(affected_area_proportion= affected_area_km2/pond_area_km2)%>%
+  mutate(worst=ifelse(affected_area_proportion>=0.1, pond_area_km2, affected_area_proportion))%>%
+  select(qldglb_,pond_area_m2, pond_area_km2, Species, Authority, geometry, affected_area_m2,affected_area_km2, affected_area_proportion, worst)
+```
+
+#sum the areas to check the effect of erosion
+```{r}
+sum(Ornamental_ponds_in_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Ornamental_ponds_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Ornamental_ponds_leases$affected_area_km2)
+sum(QLD_SLR_erosion_Ornamental_ponds_leases$worst)
+```
+```{r}
+QLD_SLR_erosion_Hatchery_ponds_leases<-QLD_SLR_erosion_Hatchery_ponds_leases%>%
+    ungroup(.) %>%
+   mutate(affected_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(affected_area_km2 = affected_area_m2/1e6)%>%
+  mutate(affected_area_proportion= affected_area_km2/pond_area_km2)%>%
+  mutate(worst=ifelse(affected_area_proportion>=0.1, pond_area_km2, affected_area_proportion))%>%
+  select(qldglb_,pond_area_m2, pond_area_km2, Species, Authority, geometry, affected_area_m2,affected_area_km2, affected_area_proportion, worst)
+```
+
+#sum the areas to check the effect of erosion
+```{r}
+sum(Hatchery_ponds_in_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Hatchery_ponds_leases$pond_area_km2)
+sum(QLD_SLR_erosion_Hatchery_ponds_leases$affected_area_km2)
+sum(QLD_SLR_erosion_Hatchery_ponds_leases$worst)
+
+```
+##saving the aquaculture Ponds in Queensland that are used for the spefific groups of species
+
+```{r}
+st_write(prawn_ponds_in_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/prawn_ponds_in_leases.gpkg"), delete_layer = TRUE)
+st_write(Barramundi_ponds_in_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/ Barramundi_ponds_in_leases.gpkg"), delete_layer = TRUE)
+st_write(Redclaw_ponds_in_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/Redclaw_ponds_in_leases.gpkg"), delete_layer = TRUE)
+st_write(Freshwater_fish_ponds_in_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/Freshwaterfish_ponds_in_leases.gpkg"), delete_layer = TRUE)
+st_write(Hatchery_ponds_in_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/Hatchery_ponds_in_leases.gpkg"), delete_layer = TRUE)
+st_write(Ornamental_ponds_in_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/Ornamental_ponds_in_leases.gpkg"), delete_layer = TRUE)
+```
+#saving the exposure of SLR over the productive farm Ponds of each species group in Queensland that are within leases used for aquaculture 
+
+```{r}
+st_write(QLD_SLR_erosion_prawn_ponds_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Prawn_ponds_leases.gpkg"), delete_layer = TRUE)
+st_write(QLD_SLR_erosion_Barramundi_ponds_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Barramundi_ponds_leases.gpkg"), delete_layer = TRUE)
+st_write(QLD_SLR_erosion_Redclaw_ponds_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Redclaw__ponds_leases.gpkg"), delete_layer = TRUE)
+st_write(QLD_SLR_erosion_Hatchery_ponds_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Hatchery_ponds_leases.gpkg"), delete_layer = TRUE)
+st_write(QLD_SLR_erosion_Freshwater_fish_ponds_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Freshwater_fish__ponds_leases.gpkg"), delete_layer = TRUE)
+st_write(QLD_SLR_erosion_Ornamental_ponds_leases, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Ornamental_ponds_leases.gpkg"), delete_layer = TRUE)
+
+```
+#START FROM HERE TO MAKE GRAPHICS
+
+
+#load_map
+#Queensland state map already reprojected 
+```{r}
+Qld_map<-st_read(here("output_data/QLD_map.shp"))
+```
+#  histograms building for leases results
+
+```{r}
+files<-list.files(here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases"), full.names = T)
+
+all<-lapply(files, read_sf)
+
+all_df<-do.call(rbind, all)
+  
+all_df2<-all_df %>% 
+  as.data.frame(.) %>% 
+  select(Species, Authority, affected_area_km2, pond_area_km2, affected_area_proportion) 
+
+```
+
+```{r}
+all_df2[22,1]<- "Hatchery"
+all_df2[23,1]<- "Hatchery"
+all_df2[24,1]<- "Hatchery"
+all_df2[25,1]<- "Hatchery"
+all_df2[50,1]<- "Prawn/Redclaw"
+all_df2[75,1]<- "Prawn/Redclaw"
+
+
+```
+
+```{r}
+ggplot(all_df2) +
+  aes(affected_area_proportion) +
+  geom_histogram() +
+  facet_wrap(facets = "Species") +
+  theme_classic() +
+    labs(x = "Prop. area affected", 
+       y = "Number of farms")
+```
+```{r}
+ggplot(all_df2) +
+  aes(affected_area_proportion, fill = Species) +
+  geom_histogram() +
+  theme_classic() +
+  scale_fill_viridis_d() +
+  labs(x = "Proportion of productive ponds affected ", 
+       y = "Number of leases")
+theme(
+    axis.title.x = element_text(size = 16),  # Increase X axis title size
+    axis.title.y = element_text(size = 16),  # Increase Y axis title size
+    axis.text.x = element_text(size = 14),   # Increase X axis text size
+    axis.text.y = element_text(size = 14)    # Increase Y axis text size
+)
+```
+```{r}
+#viridis plasma option
+ggplot(all_df2) +
+  aes(affected_area_proportion, fill = Species) +
+  geom_histogram() +
+  theme_classic() +
+  scale_fill_viridis_d(option="plasma") +
+  labs(x = "Proportion of productive ponds affected ", 
+       y = "Number of leases")
+theme(
+    axis.title.x = element_text(size = 16),  # Increase X axis title size
+    axis.title.y = element_text(size = 16),  # Increase Y axis title size
+    axis.text.x = element_text(size = 14),   # Increase X axis text size
+    axis.text.y = element_text(size = 14)    # Increase Y axis text size
+)
+```
+#viridis bar plot ponds exposure
+```{r}
+plot <- ggplot(all_df2) +
+  aes(affected_area_proportion, fill = Species) +
+  geom_histogram() +
+  theme_classic() +
+  scale_fill_viridis_d() +
+  labs(x = "Proportion of productive ponds affected", 
+       y = "Number of Leases") +
+  theme(legend.position = "none")  # Remove legend from the plot
+
+# Extract the legend
+legend2<- get_legend(
+  ggplot(all_df2) +
+    aes(affected_area_proportion, fill = Species) +
+    geom_histogram() +
+    scale_fill_viridis_d() +
+    theme_classic()
+)
+```
+```{r}
+
+# Arrange the plot and the legend
+final_plot <- plot_grid(plot, legend2, ncol = 1, rel_widths = c(1, 0.3))
+
+# Display the final plot
+print(final_plot)
+```
+
+#plot pont exposure with plasma option
+```{r}
+plot_plasma <- ggplot(all_df2) +
+  aes(affected_area_proportion, fill = Species) +
+  geom_histogram() +
+  theme_classic() +
+  scale_fill_viridis_d(option = "plasma") +
+  labs(x = "Proportion of productive ponds affected", 
+       y = "Number of Leases") +
+  theme(legend.position = "none")  # Remove legend from the plot
+```
+
+
+```{r}
+# Extract the legend
+legend2_plasma<- get_legend(
+  ggplot(all_df2) +
+    aes(affected_area_proportion, fill = Species) +
+    geom_histogram() +
+    scale_fill_viridis_d(option = "plasma")) +
+    theme_classic()
+)
+```
+#plasma plot
+```{r}
+
+# Arrange the plot and the legend
+final_plot_plasma <- plot_grid(plot_plasma, legend2_plasma, ncol = 1, rel_widths = c(1, 0.3))
+
+# Display the final plot
+print(final_plot_plasma)
+```
+
+
+
+```{r}
+
+```
+
+
+```{r}
+```{r}
+Final_species2024_leases_productive<-Final_species2024_leases%>%
+  filter(Aqcltr_=="Y")
+```
+
+
+
+```{r}
+unique(QLD_ponds_in_leases$Authority)#192
+#unique(qld_leases_erosion$Authority)#90
+unique (qld_leases_erosion_productive$Authority)#64
+unique(Final_species2024_leases_productive$Authority)#190
+unique(qld_leases$Authority)#276
+unique (qld_leases_erosion_productive$qldglb_)#82
+unique(Final_species2024_leases_productive$qldglb_)#225
+
+```
+
+```{r}
+#number of farms with ponds
+unique(prawn_ponds_in_leases$Authority) #36
+unique(Barramundi_ponds_in_leases$Authority) #29
+unique(Redclaw_ponds_in_leases$Authority) #52
+unique(Freshwater_fish_ponds_in_leases$Authority)#22
+unique(Hatchery_ponds_in_leases$Authority)#5
+unique(Ornamental_ponds_in_leases$Authority)#4
+```
+
+
+```{r}
+#number of farms with exposed ponds 
+unique(QLD_SLR_erosion_prawn_ponds_leases$Authority) #32
+unique(QLD_SLR_erosion_Barramundi_ponds_leases$Authority)#12
+unique(QLD_SLR_erosion_Redclaw_ponds_leases$Authority)#3
+unique(QLD_SLR_erosion_Freshwater_fish_ponds_leases$Authority)#4
+unique(QLD_SLR_erosion_Hatchery_ponds_leases$Authority)#3
+unique(QLD_SLR_erosion_Ornamental_ponds_leases$Authority)#1
+
+```
+```{r}
+#number of leases with ponds
+unique(prawn_ponds_in_leases$qldglb_) #52
+unique(Barramundi_ponds_in_leases$qldglb_) #42
+unique(Redclaw_ponds_in_leases$qldglb_) #56
+unique(Freshwater_fish_ponds_in_leases$qldglb_)#24
+unique(Hatchery_ponds_in_leases$qldglb_)#6
+unique(Ornamental_ponds_in_leases$qldglb_)#10
+```
+
+
+```{r}
+#number of leases with exposed ponds 
+unique(QLD_SLR_erosion_prawn_ponds_leases$qldglb_) #46
+unique(QLD_SLR_erosion_Barramundi_ponds_leases$qldglb_)#16
+unique(QLD_SLR_erosion_Redclaw_ponds_leases$qldglb_)#3
+unique(QLD_SLR_erosion_Freshwater_fish_ponds_leases$qldglb_)#5
+unique(QLD_SLR_erosion_Hatchery_ponds_leases$qldglb_)#4
+unique(QLD_SLR_erosion_Ornamental_ponds_leases$qldglb_)#1
+
+```
+```{r}
+Final_species2024_leases_productive<-Final_species2024_leases%>%
+  filter(Aqcltr_=="Y")
+```
+
+```{r}
+difference_farms<- setdiff(QLD_ponds_in_leases$Authority, Final_species2024_leases_productive$Authority)
+```
+
+```{r}
+difference_leases<- setdiff(QLD_ponds_in_leases$qldglb_, Final_species2024_leases_productive$qldglb_)
+```
+
+#multiple species
+```{r}
+prawn_barramundi_ponds<-prawn_ponds_in_leases%>%
+  filter(grepl('Prawn/Barramundi', Species))
+```
+```{r}
+sum(prawn_barramundi_ponds$pond_area_km2)
+```
+#multiple species
+```{r}
+prawn_redclaw_ponds<-prawn_ponds_in_leases%>%
+  filter(grepl('Prawns/Redclaw', Species))
+```
+```{r}
+sum(prawn_redclaw_ponds$pond_area_km2)
+```
+```{r}
+barramundi_otherfish_ponds<-Barramundi_ponds_in_leases%>%
+  filter(grepl('Barramundi/Freshwater fish', Species))
+```
+```{r}
+sum(barramundi_otherfish_ponds$pond_area_km2)
+```
+```{r}
+redclaw_freshwaterfish_ponds<-Redclaw_ponds_in_leases%>%
+  filter(grepl('Freshwater fish', Species))
+```
+```{r}
+sum(redclaw_freshwaterfish_ponds$pond_area_km2)
+```
+#saving multiple species results
+```{r}
+st_write(barramundi_otherfish_ponds, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/multiple_species/barramundi_otherfish_ponds.gpkg"), delete_layer = TRUE)
+
+st_write(redclaw_freshwaterfish_ponds, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/multiple_species/redclaw_freshwaterfish_ponds.gpkg"), delete_layer = TRUE)
+
+prawn_redclaw_ponds
+st_write(prawn_redclaw_ponds, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/multiple_species/prawn_redclaw_ponds.gpkg"), delete_layer = TRUE)
+
+prawn_barramundi_ponds
+st_write(prawn_barramundi_ponds, here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_pond_by_lease/multiple_species/prawn_barramundi_ponds.gpkg"), delete_layer = TRUE)
+
+```
+
+#checking which regions are expected to be more affected by SLR
+```{r}
+LGA<- st_read(here("raw_data/LGA/Local_Government_Areas.shp"))
+```
+```{r}
+LGA_reproj<- st_transform(LGA, 3577)
+```
+
+
+```{r}
+mostaffected_councils<- st_intersection(LGA_reproj, qld_leases_erosion)
+```
+```{r}
+mostaffected_councils_km2<-mostaffected_councils%>%
+   mutate(affected_area_km2 = affected_area_m2/1e6)
+```
+
+
+```{r}
+# Sum values of affected_area_m2 for each city (LGA)
+summed_data <- mostaffected_councils %>%
+  group_by(LGA) %>%
+  summarise(total_affected_area_m2 = sum(affected_area_m2, na.rm = TRUE))
+
+
+# View the result
+print(summed_data)
+```
+```{r}
+# Rank LGAs by affected area
+ranked_data <- mostaffected_councils %>%
+  group_by(LGA) %>%
+  summarise(total_affected_area_m2 = sum(affected_area_m2, na.rm = TRUE)) %>%
+  arrange(desc(total_affected_area_m2)) %>%
+  mutate(rank = row_number())
+```
+
+```{r}
+# Sum values of affected_area_m2 for each city (LGA)
+summed_data_km2 <- mostaffected_councils_km2 %>%
+  group_by(LGA) %>%
+  summarise(total_affected_area_km2 = sum(affected_area_km2, na.rm = TRUE))
+
+
+# View the result
+print(summed_data_km2)
+
+```
+
+```{r}
+# Rank LGAs by affected area
+ranked_data_km2 <- mostaffected_councils_km2 %>%
+  group_by(LGA) %>%
+  summarise(total_affected_area_km2 = sum(affected_area_km2, na.rm = TRUE)) %>%
+  arrange(desc(total_affected_area_km2)) %>%
+  mutate(rank = row_number())
+```
+
+```{r}
+mostaffected_councils_km2<-mostaffected_councils_km2%>%
+  mutate(propaffected_council= affected_area_km2/lease_area_km2)
+```
+
+```{r}
+ranked_data_km2 <- mostaffected_councils_km2 %>%
+ group_by(LGA) %>%
+  summarise(
+    total_affected_area_km2 = sum(affected_area_km2, na.rm = TRUE),
+    propaffected_council = first(propaffected_council)  # LGA proprotion affected already calculated before
+  ) %>%
+  arrange(desc(total_affected_area_km2)) %>%
+  mutate(rank = row_number())
+
+# View the ranked result
+print(ranked_data_km2)
+
+
+```
+
+```{r}
+ranked_data <- mostaffected_councils %>%
+ group_by(LGA) %>%
+  summarise(
+    total_affected_area_m2 = sum(affected_area_m2, na.rm = TRUE),
+    propaffectedArea = first(propaffectedArea)  # Assuming values are consistent within each LGA
+  ) %>%
+  arrange(desc(total_affected_area_m2)) %>%
+  mutate(rank = row_number())
+
+# View the ranked result
+print(ranked_data)
+
+
+```
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Rank LGAs and prepare for plotting
+ranked_data <- mostaffected_councils %>%
+  group_by(LGA) %>%
+  summarise(
+    total_affected_area_m2 = sum(affected_area_m2, na.rm = TRUE),
+    propaffectedArea = first(propaffectedArea)  # Assuming values are consistent within each LGA
+  ) %>%
+  arrange(desc(total_affected_area_m2)) %>%
+  mutate(rank = row_number())
+
+# Create a bar plot
+ggplot(ranked_data, aes(x = reorder(LGA, -total_affected_area_m2), y = total_affected_area_m2)) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "LGA", y = "Total Affected Area (m²) within Leases", title = "Ranked LGAs by Total Affected Area") +
+  theme_minimal()
+
+```
+
+
+
+```{r}
+# Load necessary libraries
+library(sf)
+library(ggplot2)
+
+# Assuming you have an LGA shapefile or spatial object
+# Load the LGA shapefile (adjust the file path accordingly)
+#LGA<- st_read(here("raw_data/LGA/Local_Government_Areas.shp"))
+
+# Join the ranked data with the shapefile data
+
+ranked_df<-as.data.frame(ranked_data) %>%
+  select(-geometry)
+mapped_data <- LGA_reproj %>%
+  full_join(ranked_df, by = "LGA")
+
+# Plot the map
+ggplot(mapped_data) +
+  geom_sf(aes(fill = total_affected_area_m2*1e-6)) +
+  scale_fill_viridis_c(option = "plasma", name = "Sea level \nrise exposure (km²)") +
+   theme_minimal()
+
+```
+#inferno colour
+```{r}
+# Plot the map
+ggplot(mapped_data) +
+  geom_sf(aes(fill = total_affected_area_m2)) +
+  scale_fill_viridis_c(option = "viridis", name = "Affected Area (m²)") +
+  labs(title = "Ranking of LGAs by Total Exposed Aquaculture Area") +
+  theme_minimal()
+
+```
+#plasma colour
+```{r}
+# Join the ranked data with the shapefile data
+
+ranked_df_km2<-as.data.frame(ranked_data_km2) %>%
+  select(-geometry)
+mapped_data_km2 <- LGA_reproj %>%
+  full_join(ranked_df_km2, by = "LGA")
+
+# Plot the map
+ggplot(mapped_data_km2) +
+  geom_sf(aes(fill = total_affected_area_km2)) +
+  scale_fill_viridis_c(option = "plasma", , name = "Sea level \nrise exposure (km²)", na.value = "lightgrey") +
+   theme_minimal()
+```
+
+
+```{r}
+library(ggrepel)
+```
+#ggrepel
+
+
+```{r}
+
+sub<-mapped_data %>%
+    filter(is.na(total_affected_area_m2) == F,
+           propaffectedArea>0.8)
+
+# Calculate centroids for each LGA (for label positioning)
+mapped_data_centroids <- sub %>%
+  mutate(centroid = st_centroid(geometry)) %>%
+  st_as_sf()
+
+# Extract the coordinates of the centroids
+centroid_coords <- st_coordinates(mapped_data_centroids$centroid)
+
+# Convert the centroids to a data frame and add the LGA names
+centroid_df <- data.frame(centroid_coords, LGA= sub$LGA)
+
+# Plot the map with LGA names
+ggplot(mapped_data) +
+ geom_sf(aes(fill = total_affected_area_m2)) +
+  scale_fill_viridis_c(option = "plasma", name = "Sea level \nrise exposure (m²)", na.value = "lightgrey") +
+      theme_minimal() +  # Minimal theme
+  geom_text_repel(data = centroid_df, aes(X, Y, label = LGA), size = 2, color = "black", max.overlaps = Inf)  # Add LGA names
+
+```
+```{r}
+
+sub2<-mapped_data_km2 %>%
+    filter(is.na(total_affected_area_km2) == F,
+           propaffected_council>0.1)
+
+# Calculate centroids for each LGA (for label positioning)
+mapped_data_centroids <- sub2 %>%
+  mutate(centroid = st_centroid(geometry)) %>%
+  st_as_sf()
+
+# Extract the coordinates of the centroids
+centroid_coords <- st_coordinates(mapped_data_centroids$centroid)
+
+# Convert the centroids to a data frame and add the LGA names
+centroid_df <- data.frame(centroid_coords, LGA= sub2$LGA)
+
+# Plot the map with LGA names
+ggplot(mapped_data_km2) +
+ geom_sf(aes(fill = total_affected_area_km2)) +
+  scale_fill_viridis_c(option = "plasma", name = "Sea level \nrise exposure (km²)", na.value = "lightgrey") +
+      theme_minimal() +  # Minimal theme
+  geom_text_repel(data = centroid_df, aes(X, Y, label = LGA), size = 2, color = "black", max.overlaps = Inf)  # Add LGA names
+
+```
+#all LGAs all aquaculture final bar plot
+#all leases plasma bar plot
+```{r}
+# Create a bar plot
+ggplot(ranked_data_km2, aes(x = reorder(LGA, -total_affected_area_km2), y = total_affected_area_km2,  fill = propaffected_council)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "LGA", y = "Total Exposed Area (km²) within Leases", title = "Ranked LGAs by Total Exposed Area") +
+   scale_fill_viridis_c(option = "plasma", name = "Proportion of Exposed\n area by lease") +
+  theme_minimal()
+
+```
+```{r}
+# Create a bubble plot
+ggplot(ranked_data, aes(x = rank, y = total_affected_area_m2, size = total_affected_area_m2, label = LGA)) +
+  geom_point(alpha = 0.6, color = "blue") +
+  geom_text(vjust = 1.5, hjust = 0.5) +
+  labs(x = "Rank", y = "Total Affected Area (m²)", title = "Bubble Plot of LGAs by Affected Area") +
+  theme_minimal() +
+  scale_size_continuous(name = "Affected Area (m²)")
+```
+  
+##most exposed LGAs for prawn
+```{r}
+mostaffected_LGA_Prawn<- st_intersection(LGA_reproj, QLD_SLR_erosion_prawn_ponds_leases)
+```
+
+```{r}
+mostaffected_LGA_Prawn_km2<-mostaffected_LGA_Prawn%>%
+  mutate(propaffected_prawn= affected_area_km2/pond_area_km2)
+```
+
+  
+  
+```{r}
+# Sum values of affected_area_m2 for each city (LGA)
+summed_data_prawn <- mostaffected_LGA_Prawn_km2 %>%
+  group_by(LGA) %>%
+  summarise(total_affected_area_km2 = sum(affected_area_km2, na.rm = TRUE))
+
+# View the result
+print(summed_data_prawn)
+```
+```{r}
+# Rank LGAs by affected area
+ranked_data_prawn <-  mostaffected_LGA_Prawn_km2 %>%
+   group_by(LGA) %>%
+  summarise(
+    total_affected_area_km2 = sum(affected_area_km2, na.rm = TRUE),
+    propaffected_prawn = first(propaffected_prawn)  # considered summing all values in the LGA
+  ) %>%
+  arrange(desc(total_affected_area_km2)) %>%
+  mutate(rank = row_number())
+
+# View the ranked result
+print(ranked_data_prawn)
+
+```
+```{r}
+# Rank LGAs and prepare for plotting
+ranked_data_prawn <-  mostaffected_LGA_Prawn_km2 %>%
+   group_by(LGA) %>%
+  summarise(
+    total_affected_area_m2 = sum(affected_area_m2, na.rm = TRUE),
+    propaffected_prawn = first(propaffected_prawn)  # considered summing all values in the LGA
+  ) %>%
+  arrange(desc(total_affected_area_m2)) %>%
+  mutate(rank = row_number())
+
+# Create a bar plot
+ggplot(ranked_data_prawn, aes(x = reorder(LGA, -total_affected_area_m2), y = total_affected_area_m2)) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "LGA", y = "Total exposed pond Area (m²) ", title = "Ranked LGAs by prawn pond Area") +
+  theme_minimal()
+
+```
+
+```{r}
+# Join the ranked data with the shapefile data
+mapped_data_prawn<- LGA_reproj %>%
+  st_join(ranked_data_prawn, by = "LGA")
+
+# Plot the map
+ggplot(mapped_data_prawn) +
+  geom_sf(aes(fill = total_affected_area_km2)) +
+  scale_fill_viridis_c(option = "plasma", name = "Exposed Area (m²) ") +
+  labs(title = "Ranking of LGAs by Total Exposed Prawn Ponds") +
+  theme_minimal()
+
+```
+
+```{r}
+# Calculate centroids for each LGA (for label positioning)
+mapped_data_centroids <- mapped_data_prawn %>%
+  mutate(centroid = st_centroid(geometry)) %>%
+  st_as_sf()
+
+# Extract the coordinates of the centroids
+centroid_coords <- st_coordinates(mapped_data_centroids$centroid)
+
+# Convert the centroids to a data frame and add the LGA names
+centroid_df <- data.frame(centroid_coords, LGA= mapped_data_prawn$LGA.x)
+
+# Plot the map with LGA names
+ggplot(mapped_data_prawn) +
+  geom_sf(aes(fill = total_affected_area_km2)) +  # Fill based on affected area
+  scale_fill_viridis_c(option = "plasma", name = "Exposed Area (km²)") +  # Color scale
+  labs(title = "Ranking of LGAs by Exposed prawn ponds area") +  # Title
+  theme_minimal() #+  # Minimal theme
+  #geom_text(data = centroid_df, aes(X, Y, label = LGA), size = 0.8, color = "black")  # Add LGA names
+
+```
+
+#most exposed LGAs for Barramundi
+```{r}
+mostaffected_LGA_Barramundi<- st_intersection(LGA_reproj, QLD_SLR_erosion_Barramundi_ponds_leases)
+```
+```{r}
+mostaffected_LGA_Barramundi_km2<-mostaffected_LGA_Barramundi%>%
+  mutate(propaffected_barra= affected_area_km2/pond_area_km2)
+```
+
+```{r}
+# Sum values of affected_area_m2 for each city (LGA)
+summed_data_Barramundi <- mostaffected_LGA_Barramundi_km2 %>%
+  group_by(LGA) %>%
+  summarise(total_affected_area_km2 = sum(affected_area_km2, na.rm = TRUE))
+
+# View the result
+print(summed_data_Barramundi)
+```
+```{r}
+# Rank LGAs by affected area
+ranked_data_Barramundi <-  mostaffected_LGA_Barramundi_km2 %>%
+  group_by(LGA) %>%
+  summarise(total_affected_area_km2 = sum(affected_area_km2, na.rm = TRUE)) %>%
+  arrange(desc(total_affected_area_km2)) %>%
+  mutate(rank = row_number())
+
+# View the ranked result
+print(ranked_data_Barramundi)
+
+```
+```{r}
+# Join the ranked data with the shapefile data
+mapped_data_Barramundi<- LGA_reproj %>%
+  st_join(ranked_data_Barramundi, by = "LGA")
+
+# Plot the map
+ggplot(mapped_data_Barramundi) +
+  geom_sf(aes(fill = total_affected_area_km2)) +
+  scale_fill_viridis_c(option = "plasma", name = "Exposed Area (km²)") +
+  labs(title = "Ranking of LGAs by Total Exposed Barramundi Ponds") +
+  theme_minimal()
+
+```
+
+```{r}
+ranked_data_Barramundi <- mostaffected_LGA_Barramundi_km2 %>%
+  group_by(LGA) %>%
+  summarise(
+    total_affected_area_km2 = sum(affected_area_km2, na.rm = TRUE),
+    propaffected_barra = first(propaffected_barra)  # considered summing all values in the LGA
+  ) %>%
+  arrange(desc(total_affected_area_km2)) %>%
+  mutate(rank = row_number())
+
+```
+
+
+```{r}
+# Create a bar plot
+ggplot(ranked_data_Barramundi, aes(x = reorder(LGA, -total_affected_area_m2), y = total_affected_area_m2)) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "LGA", y = "Total exposed Barramundi pond Area (m²) ", title = "Ranked LGAs by Barramundi pond Area exposed") +
+  theme_minimal()
+
+```
+
+```{r}
+# Calculate centroids for each LGA (for label positioning)
+mapped_data_centroids <- mapped_data_Barramundi %>%
+  mutate(centroid = st_centroid(geometry)) %>%
+  st_as_sf()
+
+# Extract the coordinates of the centroids
+centroid_coords <- st_coordinates(mapped_data_centroids$centroid)
+
+# Convert the centroids to a data frame and add the LGA names
+centroid_df <- data.frame(centroid_coords, LGA= mapped_data_Barramundi$LGA.x)
+
+# Plot the map with LGA names
+ggplot(mapped_data_Barramundi) +
+  geom_sf(aes(fill = total_affected_area_m2)) +  # Fill based on affected area
+  scale_fill_viridis_c(option = "plasma", name = "Affected Area (m²)") +  # Color scale
+  labs(title = "Ranking of LGAs by Exposed Barramundi ponds area") +  # Title
+  theme_minimal() +  # Minimal theme
+  geom_text(data = centroid_df, aes(X, Y, label = LGA), size = 0.8, color = "black")  # Add LGA names
+
+```
+
+#changing the bar plots to plasma 
+
+```{r}
+ggplot(ranked_data_prawn, aes(x = reorder(LGA, -total_affected_area_m2), y = total_affected_area_m2, fill = total_affected_area_m2)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "LGA", y = "Total exposed pond Area (m²)", title = "Ranked LGAs by prawn pond Area") +
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(ranked_data_prawn_km2, aes(x = reorder(LGA, -total_affected_area_km2), y = total_affected_area_km2, fill = propaffected_prawn)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  # Flip the axis 
+  labs(x = "LGA", y = "Total exposed pond Area (km²)", title = "Ranked LGAs by prawn pond Area") +
+  scale_fill_viridis_c(option = "plasma", name= " Proportion of ponds Exposed") +
+  theme_minimal()
+```
+
+#Barramundi by total affected area by LGA
+```{r}
+# Create a bar plot
+ggplot(ranked_data_Barramundi, aes(x = reorder(LGA, -total_affected_area_km2), y = total_affected_area_km2, , fill = total_affected_area_m2)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "LGA", y = "Total exposed Barramundi pond Area (m²) ", title = "Ranked LGAs by Barramundi pond Area exposed") +
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal()
+
+```
+
+#Barramundi by proportion of affected area by LGA
+```{r}
+# Create a bar plot
+ggplot(ranked_data_Barramundi, aes(x = reorder(LGA, -total_affected_area_km2), y = total_affected_area_km2,  fill = propaffected_barra)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "LGA", y = "Total exposed Barramundi pond Area (km²) ", title = "Ranked LGAs by Barramundi pond Area exposed") +
+  scale_fill_viridis_c(option = "plasma", name= " Proportion of ponds Exposed") +
+  theme_minimal()
+
+```
+
+
+#all leases plasma bar plot
+```{r}
+# Create a bar plot
+ggplot(ranked_data, aes(x = reorder(LGA, -total_affected_area_m2), y = total_affected_area_m2, , fill = total_affected_area_m2)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "LGA", y = "Total Affected Area (m²) within Leases", title = "Ranked LGAs by Total Affected Area") +
+   scale_fill_viridis_c(option = "plasma") +
+  theme_minimal()
+
+```
+#PropaffectedArea
+
+
+
+#find the leases without ponds
+```{r}
+Leases_without_ponds<- setdiff(Final_species2024_leases$qldglb_, QLD_ponds_in_leases$qldglb_)
+```
+
+#creating the leases without ponds dataset
+```{r}
+
+# Assuming Final_species2024_leases is an sf object with geometries
+
+# Filter the Final_species2024_leases dataset for rows with qldglb_ in Leases_without_ponds
+spatial_leases_without_ponds <- Final_species2024_leases %>%
+  filter(qldglb_ %in% Leases_without_ponds)
+
+# Now spatial_leases_without_ponds contains the geometries and other data for leases without ponds
+
+```
+```{r}
+st_write(spatial_leases_without_ponds, here("output_data/RESULTS/spatial_leases_without_ponds.gpkg"),delete_layer = TRUE)
+```
+#creating the ponds with leases dataset
+```{r}
+leases_with_ponds<-intersect(Final_species2024_leases$qldglb_, QLD_ponds_in_leases$qldglb_)
+```
+```{r}
+spatial_leases_with_ponds <- Final_species2024_leases %>%
+  filter(qldglb_ %in% leases_with_ponds)
+```
+```{r}
+st_write(spatial_leases_with_ponds, here("output_data/RESULTS/spatial_leases_with_ponds.gpkg"),delete_layer = TRUE)
+```
+```{r}
+leases_and_ponds<- st_union(spatial_leases_with_ponds, QLD_ponds_in_leases)
+```
+#saving the leases and ponds dataset
+```{r}
+st_write(leases_and_ponds, here("output_data/RESULTS/leases_and_ponds.gpkg"),delete_layer = TRUE)
+```
+#mapping the ponds and the leases 
+```{r}
+tmap_mode("view")+
+tm_shape(spatial_leases_with_ponds)+
+tm_polygons(col="red", alpha= 0.5)+
+  tm_shape(QLD_ponds_in_leases)+
+  tm_polygons(col="blue", alpha=0.8)
+```
+```{r}
+QLD_ponds_in_leases_valid<-st_make_valid(QLD_ponds_in_leases)
+```
+
+```{r}
+tmap_options(check.and.fix = TRUE)
+```
+
+#mapping more
+```{r}
+tmap_mode("view")+
+tm_shape(QLD_ponds_in_leases_valid)+
+tm_polygons(col="blue", alpha= 0.3)
+```
+
+
+```

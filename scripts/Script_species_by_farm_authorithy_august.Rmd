@@ -1,0 +1,85 @@
+---
+title: "Species_by_farm"
+output: html_document
+date: "2024-05-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#load the packages we will need
+```{r}
+library(tidyverse)
+library(here)
+library(tmap)
+library(sf)
+library(ggplot2)
+library(dplyr)
+```
+
+#load the datasets we will use for this
+#all datasets related to leases and species in Queensland
+```{r}
+Final_species2024_new<-st_read(here("output_data/Final_species2024_new.gpkg"))
+```
+```{r}
+Final_species2024_new<-Final_species2024_new%>%
+   mutate(lease_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(lease_area_ha = lease_area_m2/1e4)%>%
+  mutate(lease_area_km2 = lease_area_m2/1e6)
+```
+
+```{r}
+sum(Final_species2024_new$lease_area_km2)
+```
+
+
+```{r}
+Productive_leases_2024<-Final_species2024_new%>%
+  filter(Aqcltr_ == "Y")
+```
+
+```{r}
+Productive_leases_2024_new<-Productive_leases_2024%>%
+  mutate(lease_area_m2 = as.numeric(st_area(.)))%>%
+  mutate(lease_area_ha = lease_area_m2/1e4)%>%
+  mutate(lease_area_km2 = lease_area_m2/1e6)
+```
+
+```{r}
+sum(Productive_leases_2024_new$lease_area_km2)
+```
+
+```{r}
+Prawn_leases_2024<-Final_species2024_new%>%
+  filter(grepl('Prawn', Species))
+Barramundi_leases_2024<-Final_species2024_new%>%
+  filter(grepl('Barramundi', Species))
+Redclaw_leases_2024<-Final_species2024_new%>%
+  filter(grepl('Red', Species))
+Freshwaterfish_leases_2024<-Final_species2024_new%>%
+  filter(grepl('Freshwater fish', Species))
+Hatchery_leases_2024<-Final_species2024_new%>%
+  filter(grepl('Hatchery', Species))
+Ornamental_leases_2024<-Final_species2024_new%>%
+  filter(grepl('Orna', Species))
+```
+
+```{r}
+
+st_write(Productive_leases_2024_new, here("output_data/Productive_leases_2024_new.shp"), delete_layer = TRUE)
+st_write(Final_species2024_new, here("output_data/Final_species2024_new_area.gpkg"), delete_layer = TRUE)
+```
+
+
+```{r}
+st_write(Prawn_leases_2024, here("output_data/Prawn_leases_2024.shp"), delete_layer = TRUE)
+st_write(Barramundi_leases_2024, here("output_data/Barramundi_leases_2024.shp"), delete_layer = TRUE)
+st_write(Redclaw_leases_2024, here("output_data/Redclaw_leases_2024.shp"), delete_layer = TRUE)
+st_write(Freshwaterfish_leases_2024, here("output_data/Freshwaterfish_leases_2024.shp"), delete_layer = TRUE)
+st_write(Hatchery_leases_2024, here("output_data/Hatchery_leases_2024.shp"), delete_layer = TRUE)
+st_write(Ornamental_leases_2024, here("output_data/Ornamental_leases_2024.shp"), delete_layer = TRUE)
+```
+
+

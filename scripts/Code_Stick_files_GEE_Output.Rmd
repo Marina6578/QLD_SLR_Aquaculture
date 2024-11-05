@@ -1,0 +1,133 @@
+---
+title: "Sticking_files_gee_output"
+output: html_document
+date: "2024-03-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sf)
+library(tidyverse)
+library(here)
+library(tmap)
+library(dplyr)
+```
+
+#stick all the shapefiles from the GEE output 
+
+#worked properly from here to combined
+#call folder with files
+#NDWI_p_80
+```{r}
+shp_files<-list.files(here("D:/Documents_HD/QLD_SLR_Aquaculture/output_data/GEE_shp_20_21/NDWI_p80"), pattern = "NDWI_p80", full.names = TRUE)
+```
+
+#separate in the folder the files with different endings that arent .shp
+```{r}
+shp_filesdbf<-shp_files[grep(shp_files, pattern = ".dbf")]
+shp_filesprj<-shp_files[grep(shp_files, pattern = ".prj")]
+shp_filesshx<-shp_files[grep(shp_files, pattern = ".shx")]
+```
+
+#make lists subtracting from those done above
+```{r}
+shp_fileswithoutdbf<-shp_files[!shp_files %in% shp_filesdbf]
+shp_fileswithoutdbfprj<-shp_fileswithoutdbf[!shp_fileswithoutdbf %in% shp_filesprj]
+shp_fileswithoutdbfprjshx<- shp_fileswithoutdbfprj[!shp_fileswithoutdbfprj %in% shp_filesshx]
+```
+
+#generate a list 
+```{r}
+shapes<-list()
+```
+
+
+#read all the shapefiles in a loop
+```{r}
+for (n in 1:length(shp_fileswithoutdbfprjshx)) {
+  shapes[[n]] <- st_read(shp_fileswithoutdbfprjshx[n])}
+ 
+if (length(shp_fileswithoutdbfprjshx) == 0) {
+  stop("No shapefiles found in the folder.")
+}
+```
+
+#combined all 37 shapefiles
+```{r}
+combined_shapefile <- bind_rows(shapes)
+```
+
+#save the combined shapefile
+```{r}
+st_write(combined_shapefile, here("output_data/QLD_aqua_ponds_combined_shapefile.shp"), delete_layer = TRUE)
+```
+
+#NOW DO THE SAME FOR THE OTHER SHAPEFILES
+
+#NDWI P20
+#worked properly from here to combined
+#call folder with files
+```{r}
+shp_files<-list.files(here("D:/Documents_HD/QLD_SLR_Aquaculture/output_data/GEE_shp_20_21/NDWI_p20"), pattern = "NDWI_p20", full.names = TRUE)
+```
+
+#separate in the folder the files with different endings that arent .shp
+```{r}
+shp_filesdbf<-shp_files[grep(shp_files, pattern = ".dbf")]
+shp_filesprj<-shp_files[grep(shp_files, pattern = ".prj")]
+shp_filesshx<-shp_files[grep(shp_files, pattern = ".shx")]
+```
+
+#make lists subtracting from those done above
+```{r}
+shp_fileswithoutdbf<-shp_files[!shp_files %in% shp_filesdbf]
+shp_fileswithoutdbfprj<-shp_fileswithoutdbf[!shp_fileswithoutdbf %in% shp_filesprj]
+shp_fileswithoutdbfprjshx<- shp_fileswithoutdbfprj[!shp_fileswithoutdbfprj %in% shp_filesshx]
+```
+
+#generate a list 
+```{r}
+shapes<-list()
+```
+
+#read all the shapefiles in a loop
+```{r}
+for (n in 1:length(shp_fileswithoutdbfprjshx)) {
+  shapes[[n]] <- st_read(shp_fileswithoutdbfprjshx[n])}
+ 
+if (length(shp_fileswithoutdbfprjshx) == 0) {
+  stop("No shapefiles found in the folder.")
+}
+```
+
+#combined all shapefiles in one 
+```{r}
+combined_shapefile_NDWI_p20 <- bind_rows(shapes)
+```
+
+#save the combined shapefile
+```{r}
+st_write(combined_shapefile_NDWI_p20, here("output_data/QLD_aqua_ponds_combined_shapefile_NDWI_p20.shp"), delete_layer = TRUE)
+```
+#in case I want to combine both Shapefiles I could
+```{r}
+combined_shapefile_NDWI_p20_p80 <- bind_rows(combined_shapefile_NDWI_p20, QLD_ponds_GEEOutput)
+```
+
+```{r}
+qtm(combined_shapefile_NDWI_p20_p80)
+```
+```{r}
+#tmap_mode("view")
+tm_shape((combined_shapefile_NDWI_p20))+
+tm_polygons(col="yellow")+ 
+tm_shape((QLD_ponds_GEEOutput))+
+tm_polygons(col="blue")+
+   tm_basemap(providers$Esri.WorldImagery)
+  
+```
+
+

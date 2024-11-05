@@ -1,0 +1,327 @@
+---
+title: "ADA_results"
+output: html_document
+date: "2024-01-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("readxl")
+install.packages("stringr")
+```
+
+#load packages 
+```{r}
+library(tmap)
+library(ozmaps)
+library(tidyverse)
+library(here)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(tmaptools)
+library(gridExtra)
+library(cowplot)
+library(mapview)
+library(leaflet)
+library(readxl)
+library(stringr)
+```
+#load datasets of ADAs
+
+```{r}
+ADA_01_affected<-st_read(here("output_data/Prop_affected_area_ADA1.shp"))
+ADA_02_affected<-st_read(here("output_data/Prop_affected_area_ADA2.shp"))
+ADA_03_affected<-st_read(here("output_data/Prop_affected_area_ADA3.shp"))
+ADA_04_affected<-st_read(here("output_data/Prop_affected_area_ADA4.shp"))
+ADA_05_affected<-st_read(here("output_data/Prop_affected_area_ADA5.shp"))
+ADA_06_affected<-st_read(here("output_data/Prop_affected_area_ADA6.shp"))
+ADA_07_affected<-st_read(here("output_data/Prop_affected_area_ADA7.shp"))
+ADA_08_affected<-st_read(here("output_data/Prop_affected_area_ADA8.shp"))
+```
+
+#create a new column in each with the percentage of area exposed to SLR in 2100 and another one for the ADA number
+
+#adding columns we will need to ADAs risk result
+```{r}
+ADA_01_exposurepercentage<-ADA_01_affected%>%
+  mutate(
+    percentage= affct__*100,
+    ADA = 01
+    )
+ADA_02_exposurepercentage<-ADA_02_affected%>%
+  mutate(
+    percentage= affct__*100,
+    ADA = 02
+    )
+ADA_03_exposurepercentage<-ADA_03_affected%>%
+ mutate(
+    percentage= affct__*100,
+    ADA = 03
+    )
+ADA_04_exposurepercentage<-ADA_04_affected%>%
+  mutate(
+    percentage= affct__*100,
+    ADA = 04
+    )
+ADA_05_exposurepercentage<-ADA_05_affected%>%
+  mutate(
+    percentage= affct__*100,
+    ADA = 05
+    )
+ADA_06_exposurepercentage<-ADA_06_affected%>%
+ mutate(
+    percentage= affct__*100,
+    ADA = 06
+    )
+ADA_07_exposurepercentage<-ADA_07_affected%>%
+  mutate(
+    percentage= affct__*100,
+    ADA = 07
+    )
+ADA_08_exposurepercentage<-ADA_08_affected%>%
+  mutate(
+    percentage= affct__*100,
+    ADA = 08
+    )
+```
+
+
+#bind datasets of ADAs
+```{r}
+all_ADAs_exposure<-bind_rows(ADA_01_exposurepercentage, ADA_02_exposurepercentage, ADA_03_exposurepercentage, ADA_04_exposurepercentage, ADA_05_exposurepercentage, ADA_06_exposurepercentage, ADA_07_exposurepercentage, ADA_08_exposurepercentage)
+```
+
+```{r}
+all_ADAs_exposure<-all_ADAs_exposure%>%
+  select(-diss, -diss2, -diss_1, -diss2_1, area_m2, affc__2,   affct__, percentage, ADA, geometry )
+```
+```{r}
+all_ADAs_exposure_LGA<- st_intersection(all_ADAs_exposure, LGA_reproj)
+```
+
+#map of Australia
+
+```{r}
+QLD_map<st_read(here("output_data/QLD_map.shp"))
+```
+
+
+#plot result of the percentage in a map
+# for ADAs- change color?
+
+```{r}
+tmap_mode("view")
+tm_shape(QLD_map) +
+  tm_polygons(col= "lightgrey", alpha=0.2)+
+tm_shape(all_ADAs_exposure) +
+tm_bubbles(size = "percentage", col = "red")
+```
+#tm_bubbles
+```{r}
+tmap_mode("view")+
+tm_shape(QLD_map) +
+  tm_polygons(col= "lightgrey", alpha=0.2)+
+tm_shape(shp = all_ADAs_exposure) +
+tm_bubbles(size = "percentage")
+```
+
+```{r}
+tmap_mode("view")+
+tm_shape(shp = all_ADAs_exposure) +
+tm_bubbles(size = "percentage", auto.palette.mapping = TRUE, contrast = 1, max.categories = 12)
+```
+
+#I want this to come up too (shp = SLR_projection_QLD_reproj)+
+#different colors each break or something like that (bubbles)
+#polygons try with them with different colors
+
+```{r}
+tmap_mode("plot")+
+ tm_shape(QLD_map) +
+  tm_polygons(col= "lightgrey", alpha=0.2)+
+  tm_shape(shp = all_ADAs_exposure) +
+tm_bubbles(size = 0.3, 
+            col = "percentage",
+            title.col = "% of each ADA expected to be exposed by SLR",
+           palette = viridis(10),
+           style= "quantile")+
+tm_layout(title= 'Hotspots of risk to ADAs in QLD',             
+          title.position = c("right", "top"),
+          legend.position = c("right", "top"),
+   inner.margins = c(0.1, 0.1, 0.1, 0.3))
+```
+
+
+```{r}
+tmap_mode("plot")+
+ tm_shape(QLD_map) +
+  tm_polygons(col= "lightgrey", alpha=0.2)+
+  tm_shape(shp = all_ADAs_exposure) +
+tm_bubbles(size = 0.3, 
+            col = "percentage",
+            title.col = "% of each ADA expected to be exposed by SLR",
+           palette = viridis(10),
+           style= "quantile")+
+tm_layout(legend.position = c("right", "top"),
+   inner.margins = c(0.1, 0.1, 0.1, 0.3))
+
+```
+
+
+#Caitie thinks I could have the polygons instead of bubbles coloured by their exposure 
+
+```{r}
+tmap_mode("view")+
+tm_shape(shp = all_ADAs_exposure) +
+tm_polygons(col = "percentage",
+           style= "quantile",
+           palette = '-YlGn',
+           border.alpha =0.6 )
+```
+
+```{r}
+ADAs_4plot<- read_excel(here("raw_data/ADAs result_4plots.xlsx"))
+```
+
+
+#this is a possibility
+
+```{r}
+ggplot(data = all_ADAs_exposure, aes(y =percentage, x =  area_m2)) +
+  geom_point() +
+  xlab("percentage of the area exposed") +
+  ylab("Area") +
+  theme_bw()
+
+```
+
+#another 
+```{r}
+ggplot(data = all_ADAs_exposure, aes(y =percentage, x =  area_m2)) +
+  geom_point() +
+  xlab("percentage of the area exposed") +
+  ylab("Area") +
+  theme_bw()
+#put color possibility of pallete here if I can 
+
+```
+ 
+ 
+#this is a possibility but coloured would look better
+```{r}
+area_median<-median(all_ADAs_exposure$area_m2)
+prop_median<-median(all_ADAs_exposure$affc__2)
+
+ggplot(data = all_ADAs_exposure, aes(y = area_m2, x = percentage)) +
+geom_point() +
+xlab("Prop. area affected") +
+ylab("Area") +
+theme_bw() +
+geom_hline(yintercept = area_median) 
+geom_vline(xintercept = prop_median)
+```
+```{r}
+tmap_mode("plot")+
+tm_shape(shp = all_ADAs_exposure) +
+tm_polygons(col = "percentage",
+           style= "quantile",
+           palette = '-viridis',
+           border.alpha =1 )
+```
+```{r}
+tmap_mode("plot")+
+  tm_shape(QLD_map) +
+  tm_polygons(col= "lightgrey", alpha=0.2)+
+  tm_polygons()+
+  tm_shape(shp = all_ADAs_exposure) +
+  tm_polygons(col = "percentage",
+           style= "quantile",
+           palette = 'viridis',
+           border.alpha =0.2 )
+```
+```{r}
+ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = all_ADAs_exposure, aes(geometry = geometry, color = percentage), 
+             alpha = 0.8, stat = "sf_coordinates") +  # Bubbles with color mapped
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the size range of the bubbles
+  scale_color_viridis_c(name = "Percentage of the ADA exposed by 2100", option = "viridis") +  # Color scale with viridis palette and title
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position =  "bottom",  # Adjust legend position
+    legend.title = element_text(size = 12),  # Adjust legend title size
+    plot.margin = margin(10, 30, 10, 10)  # Adjust plot margins
+  ) +
+  labs(x = "Longitude", y = "Latitude")  # Add labels to the x and y axes
+
+```
+```{r}
+ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = all_ADAs_exposure, aes(geometry = geometry, color = percentage), 
+             alpha = 0.8, stat = "sf_coordinates") +  # Bubbles with color mapped
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the size range of the bubbles
+  scale_color_viridis_c(name = "Percentage of the ADA exposed by 2100", option = "plasma") +  # Color scale with viridis palette and title
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position =  "bottom",  # Adjust legend position
+    legend.title = element_text(size = 10),  # Adjust legend title size
+    plot.margin = margin(10, 30, 10, 10)  # Adjust plot margins
+  ) +
+  labs(x = "Longitude", y = "Latitude")  # Add labels to the x and y axes
+
+```
+
+```{r}
+ADA_results_map<-ggplot() +
+  geom_sf(data = QLD_map, fill = "gray", alpha = 0.2) +  # Base map with QLD_map
+  geom_point(data = all_ADAs_exposure, aes(geometry = geometry, color = percentage), 
+             alpha = 0.8, stat = "sf_coordinates") +  # Bubbles with color mapped
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the size range of the bubbles
+  scale_color_viridis_c(name = "Sea level rise \nexposure (%)", option = "plasma") +  # Color scale with viridis palette and title
+  theme_minimal() +  # Minimal theme for better visualization
+  theme(
+    legend.position =  "right",  # Adjust legend position
+    legend.title = element_text(size = 10),  # Adjust legend title size
+    plot.margin = margin(10, 30, 10, 10)  # Adjust plot margins
+  ) +
+  labs(x = "Longitude", y = "Latitude")  # Add labels to the x and y axes
+
+```
+```{r}
+plot(ADA_results_map)
+```
+
+#bar plot for ADAs
+
+```{r}
+# Create a bar plot
+ADA_bar<-ggplot(all_ADAs_exposure_LGA, aes(x = reorder(ADA, -percentage), y = affct__,  fill = percentage)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "ADA", y = "proportion of exposed area within ADA to SLR by 2100") +
+   scale_fill_viridis_c(option = "plasma", name = "Proportion of  \n ADA exposed") +
+  theme_minimal()
+
+```
+```{r}
+plot(ADA_bar)
+```
+
+```{r}
+# Create a bar plot with LGA labels
+ggplot(all_ADAs_exposure_LGA, aes(x = reorder(ADA, -percentage), y = affct__, fill = percentage)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = LGA), hjust = 0.1, size = 3) +  # Add LGA labels just outside the bars
+  coord_flip() +  # Flip the axis for better readability
+  labs(x = "ADA", y = "Proportion of exposed area within ADA to SLR by 2100") +
+  scale_fill_viridis_c(option = "plasma", name = "Proportion of \n ADA exposed") +
+  theme_minimal()
+
+```
+
+
