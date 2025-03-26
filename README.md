@@ -1,9 +1,9 @@
 This repository is part of a publication named "Queensland’s coastal terrestrial aquaculture at risk from sea level rise by 2100" 
 
-Authors: Christofidis, Marina;  Lyons, Mitchell;  Kuempel, Caitlin
+Authors: Christofidis, Marina;  Lyons, Mitchell B.;  Kuempel, Caitlin D.
 
 We here post the codes used to assess the exposure of Queensland’s coastal terrestrial aquaculture industry to SLR.
-We use existing datasets on coastal inundation and erosion from sea level rise23 combined with novel data on current and future aquaculture
+We use existing datasets on coastal inundation and erosion from sea level rise combined with novel data on current and future aquaculture
 location and production estimates to identify hot spots of risk and to estimate potential economic losses considering a Representative 
 Concentration Pathway (RCP) 8.5 for year 2100.
 
