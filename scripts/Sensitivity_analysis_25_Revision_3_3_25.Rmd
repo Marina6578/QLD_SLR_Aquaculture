@@ -1,0 +1,1513 @@
+---
+title: "Sensitivity_analysis"
+output: html_document
+date: "2025-02-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(tmap)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(ggrepel)
+library(reshape2)
+library(scales)
+```
+
+#upload results of erosion from the Script named: Ponds_in_leases_erosion_and_histograms"
+```{r}
+QLD_SLR_erosion_prawn_ponds<- st_read(here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Prawn_ponds_leases.gpkg"))
+QLD_SLR_erosion_Barramundi_ponds<- st_read(here("output_data/QLD_Aquaculture_distribution/RESULTS/QLD_SLR_by_leases/QLD_SLR_erosion_Barramundi_ponds_leases.gpkg"))
+```
+
+#create the function
+#calculate_impacts
+# Inputs: 
+# - data: the dataframe (QLD_SLR_erosion_prawn_ponds) data that you will use later 
+# - threshold: the percentage threshold you want to test (0.02, 0.05, 0.10,  0.15,  0.20, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,)
+# mutate creates or modifies columns 'threshold_value' that stores which threshold was used       #threshold_value = threshold,
+# Creates a new column 'expected_loss' using an if-else statement:
+# IF affected_area_proportion >= threshold (e.g., ≥ 0.05 or 5%)
+#    THEN use pond_area_km2 (total loss)
+#    ELSE use affected_area_km2 (partial loss)
+
+
+```{r}
+calculate_impacts <- function(data, threshold) {
+  data %>%
+    mutate(
+      threshold_value = threshold,
+      expected_loss = ifelse(affected_area_proportion >= threshold, 
+                    pond_area_km2, 
+                    affected_area_km2),
+          )
+}
+```
+
+#For ponds above threshold:
+
+#affected_area_proportion >= threshold
+#counts FULL pond area (pond_area_km2)
+#assumes pond becomes unviable
+
+
+#For ponds below threshold:
+
+#affected_area_proportion < threshold
+#counts only affected portion (affected_area_km2)
+#assumes pond remains partially viable
+
+
+#filter the erosion datasets on species to make sure they dont contain anything we wont need.
+```{r}
+# Filter single-species entries for prawns
+QLD_SLR_erosion_prawn_ponds_filtered <- QLD_SLR_erosion_prawn_ponds %>%
+  filter(Species == "Prawn")%>%# Keep only "Prawn" entries
+  dplyr::select(qldglb_, pond_area_m2, pond_area_km2, Species,   Authority, affected_area_m2,  affected_area_km2, affected_area_proportion, geom)
+
+# Filter single-species entries for barramundi
+QLD_SLR_erosion_Barramundi_ponds_filtered <- QLD_SLR_erosion_Barramundi_ponds %>%
+  filter(Species == "Barramundi")%>% # Keep only "Barramundi" entries
+  dplyr::select(qldglb_, pond_area_m2, pond_area_km2, Species,   Authority, affected_area_m2,  affected_area_km2, affected_area_proportion, geom)
+
+```
+```{r}
+# Filter deouble-species entries for prawns/barramundi
+QLD_SLR_erosion_prawnbarra_ponds_filtered <- QLD_SLR_erosion_prawn_ponds %>%
+  filter(Species == "Prawn/Barramundi")%>%# Keep both prawn and barramundi
+  dplyr::select(qldglb_, pond_area_m2, pond_area_km2, Species,   Authority, affected_area_m2,  affected_area_km2, affected_area_proportion, geom)
+```
+
+#Sensitivity_analysis for prawn aquaculture
+```{r}
+# Apply different thresholds
+sensitivity_analysis_prawn <- bind_rows(
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.02),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.05),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.075),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.10),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.15),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.20),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.30),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.40),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.50),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.60),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.70),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.80),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 0.90),
+  calculate_impacts(QLD_SLR_erosion_prawn_ponds_filtered, 1)
+  
+)
+
+```
+
+```{r}
+# Calculate summary statistics
+sensitivity_summary_prawn <- sensitivity_analysis_prawn %>%
+  group_by(threshold_value, Species) %>%
+  summarize(
+    total_affected_area = sum(expected_loss),
+        n_ponds = n(),
+  )
+```
+
+```{r}
+# Bar plot comparing impacts across thresholds
+ggplot(sensitivity_summary_prawn, 
+       aes(x = factor(threshold_value), 
+           y = total_affected_area, 
+           fill = Species)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Total Affected Area (km²)",
+    title = "Sensitivity Analysis of Inundation Thresholds",
+    subtitle = "Impact on Aquaculture Production Area by Species"
+  ) +
+  scale_x_discrete(labels = c("2%", "5%", "7.5%", "10%", "15%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%")) +
+  theme(legend.position = "bottom")
+
+# Alternative visualization: line plot
+ggplot(sensitivity_summary_prawn, 
+       aes(x = threshold_value, 
+           y = total_affected_area, 
+           color = Species)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Total Affected Area (km²)",
+    title = "Sensitivity Analysis of Inundation Thresholds",
+    subtitle = "Impact on Aquaculture Production Area by Species"
+  ) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  theme(legend.position = "bottom")
+```
+
+
+```{r}
+# Save summary to CSV if needed droping geometry before
+sensitivity_summary_prawn%>%
+  st_drop_geometry() %>%  # Drop geometry just before saving to CSV
+  write.csv(here("output_data/sensitivity_analysis_prawn_results.csv"))
+
+
+```
+
+
+#Sensitivity_analysis for barramundi aquaculture
+```{r}
+# Apply different thresholds
+sensitivity_analysis_Barra <- bind_rows(
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.02),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.05),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.075),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.10),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.15),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.20),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.30),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.40),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.50),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.60),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.70),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.80),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 0.90),
+  calculate_impacts(QLD_SLR_erosion_Barramundi_ponds_filtered, 1),
+)
+
+```
+```{r}
+# Calculate summary statistics
+sensitivity_summary_Barra <- sensitivity_analysis_Barra %>%
+  group_by(threshold_value, Species) %>%
+  summarize(
+    total_affected_area = sum(expected_loss),
+    mean_affected_proportion = mean(affected_area_proportion),
+    n_ponds = n()
+  )
+```
+```{r}
+# Bar plot comparing impacts across thresholds
+ggplot(sensitivity_summary_Barra, 
+       aes(x = factor(threshold_value), 
+           y = total_affected_area, 
+           fill = Species)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Total Affected Area (km²)",
+    title = "Sensitivity Analysis of Inundation Thresholds",
+    subtitle = "Impact on Aquaculture Production Area by Species"
+  ) +
+  scale_x_discrete(labels = c("2%", "5%", "7.5%", "10%", "15%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%")) +
+  theme(legend.position = "bottom")
+
+# Alternative visualization: line plot
+ggplot(sensitivity_summary_Barra, 
+       aes(x = threshold_value, 
+           y = total_affected_area, 
+           color = Species)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Total Affected Area (km²)",
+    title = "Sensitivity Analysis of Inundation Thresholds",
+    subtitle = "Impact on Aquaculture Production Area by Species"
+  ) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  theme(legend.position = "bottom")
+```
+```{r}
+# Save summary to CSV if needed
+sensitivity_summary_Barra%>%
+  st_drop_geometry() %>%  # Drop geometry just before saving to CSV
+  write.csv(here("output_data/sensitivity_analysis_Barra_results.csv"))
+
+```
+
+#apply thresolds to multiple species ponds
+```{r}
+# Apply different thresholds with the calculate impacts function
+sensitivity_analysis_prawnbarra <- bind_rows(
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.02),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.05),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.075),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.10),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.15),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.20),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.30),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.40),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.50),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.60),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.70),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.80),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 0.90),
+  calculate_impacts(QLD_SLR_erosion_prawnbarra_ponds_filtered, 1),
+)
+
+```
+
+```{r}
+# Calculate summary statistics
+sensitivity_summary_prawnbarra <- sensitivity_analysis_prawnbarra %>%
+  group_by(threshold_value, Species) %>%
+  summarize(
+    total_affected_area = sum(expected_loss),
+    mean_affected_proportion = mean(affected_area_proportion),
+    n_ponds = n()
+  )
+```
+```{r}
+# Bar plot comparing impacts across thresholds
+ggplot(sensitivity_summary_prawnbarra, 
+       aes(x = factor(threshold_value), 
+           y = total_affected_area, 
+           fill = Species)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Total Affected Area (km²)",
+    title = "Sensitivity Analysis of Inundation Thresholds",
+    subtitle = "Impact on Aquaculture Production Area by Species"
+  ) +
+  scale_x_discrete(labels = c("2%", "5%", "7.5%", "10%", "15%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%")) +
+  theme(legend.position = "bottom")
+
+# Alternative visualization: line plot
+ggplot(sensitivity_summary_prawnbarra, 
+       aes(x = threshold_value, 
+           y = total_affected_area, 
+           color = Species)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Total Affected Area (km²)",
+    title = "Sensitivity Analysis of Inundation Thresholds",
+    subtitle = "Impact on Aquaculture Production Area by Species"
+  ) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  theme(legend.position = "bottom")
+```
+```{r}
+# Save summary to CSV if needed
+sensitivity_summary_prawnbarra%>%
+  st_drop_geometry() %>%  # Drop geometry just before saving to CSV
+  write.csv(here("output_data/sensitivity_analysis_prawnbarra_results.csv"))
+
+```
+
+
+
+# calculating the production value per km² based on the values earned in 2020-2021 and the amount of area calculated using GEE for those years:
+#Prawns: 146,000M AUD / 11.71km² = 12,467.12M AUD/km²
+#Barramundi: 34,900M AUD / 2.15km² = 16,232.56M AUD/km²
+
+```{r}
+# For Prawns
+sensitivity_summary_prawn_economic <- sensitivity_summary_prawn %>%
+  mutate(
+    value_per_km2 = 12467.12,  # Million AUD per km²
+    potential_loss = total_affected_area * value_per_km2,
+    total_species_area = 11.71,  # total area for Prawns
+    percent_of_total_area = (total_affected_area/total_species_area) * 100
+  )
+```
+
+
+
+```{r}
+# For Barramundi
+sensitivity_summary_barra_economic <- sensitivity_summary_Barra %>%
+  mutate(
+    value_per_km2 = 16232.56,  # Million AUD per km²
+    potential_loss = total_affected_area * value_per_km2,
+    total_species_area = 2.15,  # total area for Barramundi
+    percent_of_total_area = (total_affected_area/total_species_area) * 100
+  )
+
+```
+
+
+```{r}
+# Create combined economic impact visualization
+combined_economic <- bind_rows(
+  sensitivity_summary_prawn_economic,
+  sensitivity_summary_barra_economic
+)
+
+# Plot economic losses
+ggplot(combined_economic, 
+       aes(x = factor(threshold_value), 
+           y = potential_loss, 
+           fill = Species)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Potential Economic Loss (Million AUD)",
+    title = "Economic Impact Analysis of Inundation Thresholds",
+    subtitle = "Potential Loss by Species"
+  ) +
+  scale_x_discrete(labels = c("2%", "5%", "7.5%", "10%", "15%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%")) +
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::comma)
+
+# Save economic analysis results
+write.csv(combined_economic %>% st_drop_geometry(), 
+          here("output_data/sensitivity_analysis_economic_results.csv"))
+```
+```{r}
+library(viridis) # Make sure to load the viridis package
+
+# Bar plot with viridis colors
+ggplot(combined_economic, 
+       aes(x = factor(threshold_value), 
+           y = potential_loss, 
+           fill = Species)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Potential Economic Loss (Million AUD)",
+    title = "Economic Impact Analysis of Inundation Thresholds",
+    subtitle = "Potential Loss by Species"
+  ) +
+  scale_x_discrete(labels = c("2%", "5%", "7.5%", "10%", "15%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%")) +
+  scale_fill_viridis(discrete = TRUE) + # Add viridis colors
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::comma)
+
+# Line plot with viridis colors
+ggplot(combined_economic, 
+       aes(x = threshold_value, 
+           y = potential_loss, 
+           color = Species)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Potential Economic Loss (Million AUD)",
+    title = "Economic Impact Analysis of Inundation Thresholds",
+    subtitle = "Potential Loss by Species"
+  ) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_color_viridis(discrete = TRUE) + # Add viridis colors
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::comma)
+
+# If you prefer a different viridis palette, you can specify it:
+# Options: "magma", "plasma", "inferno", "cividis", "viridis"
+# Example using "plasma":
+  scale_fill_viridis(discrete = TRUE, option = "plasma") # for bar plot
+  scale_color_viridis(discrete = TRUE, option = "plasma") # for line plot
+```
+```{r}
+# Create combined economic impact visualization with facets
+ggplot(combined_economic, 
+       aes(x = factor(threshold_value), 
+           y = potential_loss, 
+           fill = Species)) +
+  geom_bar(stat = "identity") +  # Removed position="dodge" as it's not needed with facets
+  facet_wrap(~Species, scales = "free_y") +  # Added facet_wrap with free y scales
+  theme_minimal() +
+  labs(
+    x = "Inundation Threshold",
+    y = "Potential Economic Loss (Million AUD)",
+    title = "Economic Impact Analysis of Inundation Thresholds",
+    subtitle = "Potential Loss by Species"
+  ) +
+  scale_x_discrete(labels = c("2%", "5%", "7.5%", "10%", "15%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%")) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Added angled x-axis labels for better readability
+  ) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_viridis_d()  # Added viridis color scale for better visualization
+
+# If you want to adjust the facet layout, you can add:
+# facet_wrap(~Species, scales = "free_y", nrow = 2)  # for vertical arrangement
+# or
+# facet_wrap(~Species, scales = "free_y", ncol = 2)  # for horizontal arrangement
+```
+
+
+```{r}
+# Save economic analysis results
+write.csv(sensitivity_summary_barra_economic %>% st_drop_geometry(), 
+          here("output_data/sensitivity_analysis_barra_economic_results.csv"))
+```
+
+```{r}
+# Save economic analysis results
+write.csv(sensitivity_summary_prawn_economic %>% st_drop_geometry(), 
+          here("output_data/sensitivity_analysis_prawn_economic_results.csv"))
+```
+
+#creating a heatmap for prawn data
+```{r}
+
+
+# Select relevant columns and normalize them
+metrics <- c('total_affected_area', 'potential_loss', 'percent_of_total_area')
+
+# Create normalized data frame
+heatmap_data <- sensitivity_summary_prawn_economic
+
+# Normalize the values
+for(col in metrics) {
+  heatmap_data[[col]] <- (heatmap_data[[col]] - min(heatmap_data[[col]])) / 
+                         (max(heatmap_data[[col]]) - min(heatmap_data[[col]]))
+}
+
+# Reshape data to long format
+heatmap_long <- melt(heatmap_data, 
+                    id.vars = "threshold_value",
+                    measure.vars = metrics,
+                    variable.name = "Metric",
+                    value.name = "Value")
+
+# Create heatmap
+ggplot(heatmap_long, aes(x = Metric, y = factor(threshold_value), fill = Value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  geom_text(aes(label = sprintf("%.2f", Value)), size = 3) +
+  theme_minimal() +
+  labs(title = "Sensitivity Analysis: Impact of Different Thresholds for Prawn",
+       y = "Threshold Values",
+       fill = "Normalized Impact") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#creating a heatmap for prawn barramundi
+```{r}
+
+# Select relevant columns and normalize them
+metrics_barra <- c('total_affected_area', 'potential_loss', 'percent_of_total_area')
+
+# Create normalized data frame
+heatmap_data_barra <- sensitivity_summary_barra_economic
+
+# Normalize the values
+for(col in metrics) {
+  heatmap_data_barra[[col]] <- (heatmap_data_barra[[col]] - min(heatmap_data_barra[[col]])) / 
+                         (max(heatmap_data_barra[[col]]) - min(heatmap_data_barra[[col]]))
+}
+
+# Reshape data to long format
+heatmap_long_barra <- melt(heatmap_data_barra, 
+                    id.vars = "threshold_value",
+                    measure.vars = metrics,
+                    variable.name = "Metric",
+                    value.name = "Value")
+
+# Create heatmap
+ggplot(heatmap_long_barra, aes(x = Metric, y = factor(threshold_value), fill = Value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  geom_text(aes(label = sprintf("%.2f", Value)), size = 3) +
+  theme_minimal() +
+  labs(title = "Sensitivity Analysis: Impact of Different Thresholds for Barramundi",
+       y = "Threshold Values",
+       fill = "Normalized Impact") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+#  summary statistics prawn
+```{r}
+# summary statistics prawn
+summary_stats <- QLD_SLR_erosion_prawn_ponds_filtered %>%
+  group_by(Species) %>%
+  summarise(
+    mean_affected = mean(affected_area_proportion),
+    median_affected = median(affected_area_proportion),
+    sd_affected = sd(affected_area_proportion),
+    n = n()
+  )
+
+print(summary_stats)
+```
+#summary statistics barramundi
+
+```{r}
+summary_stats_Barra <- QLD_SLR_erosion_Barramundi_ponds_filtered %>%
+  group_by(Species) %>%
+  summarise(
+    mean_affected = mean(affected_area_proportion),
+    median_affected = median(affected_area_proportion),
+    sd_affected = sd(affected_area_proportion),
+    n = n()
+  )
+
+print(summary_stats_Barra)
+```
+
+```{r}
+# Create a function to count ponds above/below threshold
+threshold_counts <- function(data, threshold) {
+  data %>%
+    group_by(Species) %>%
+    summarise(
+      total_ponds = n(),
+      ponds_above_threshold = sum(affected_area_proportion >= threshold),
+      ponds_below_threshold = sum(affected_area_proportion < threshold)
+    )
+}
+```
+
+```{r}
+# Combine both datasets
+combined_data <- bind_rows(
+  QLD_SLR_erosion_prawn_ponds_filtered,
+  QLD_SLR_erosion_Barramundi_ponds_filtered
+)
+```
+
+
+```{r}
+# Apply to all thresholds
+thresholds <- c(0.02, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
+```
+
+```{r}
+# For the threshold counts
+threshold_results <- map_dfr(thresholds, 
+    ~threshold_counts(combined_data, .x)) %>%
+  mutate(threshold = rep(thresholds, each = 2))
+```
+
+```{r}
+# Create visualization
+ggplot(threshold_results, aes(x = factor(threshold))) +
+  geom_bar(aes(y = ponds_above_threshold, fill = "Above Threshold"), stat = "identity") +
+  geom_bar(aes(y = ponds_below_threshold, fill = "Below Threshold"), stat = "identity") +
+  facet_wrap(~Species) +
+  theme_minimal() +
+  labs(title = "Number of Ponds Above/Below Each Threshold",
+       x = "Threshold Value",
+       y = "Number of Ponds",
+       fill = "Threshold Status") +
+  theme(axis.text.x = element_text(angle = 45))
+```
+
+
+```{r}
+# Create visualization with combined data
+ggplot(combined_data, aes(x = affected_area_proportion)) +
+  geom_histogram(binwidth = 0.05, fill = "lightblue", color = "black") +
+  geom_vline(xintercept = thresholds, color = "red", linetype = "dashed", alpha = 0.5) +
+  facet_wrap(~Species, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Distribution of Affected Area Proportions with Thresholds",
+       x = "Affected Area Proportion",
+       y = "Count")
+
+```
+
+
+```{r}
+# Check columns in economic data
+print("Columns in sensitivity_summary_barra_economic:")
+names(sensitivity_summary_barra_economic %>% st_drop_geometry())
+```
+
+```{r}
+# For Barramundi
+barramundi_summary <- sensitivity_summary_barra_economic %>%
+  st_drop_geometry() %>%
+  left_join(
+    threshold_results %>%
+      filter(Species == "Barramundi") %>%
+      select(threshold, ponds_above_threshold, ponds_below_threshold),
+    by = c("threshold_value" = "threshold")
+  ) %>%
+  select(
+    Threshold = threshold_value,
+    Total_Ponds = n_ponds,
+    Ponds_Above = ponds_above_threshold,
+    Ponds_Below = ponds_below_threshold,
+    `Total_Affected_Area` = total_affected_area,
+    `Mean_Affected_Proportion` = mean_affected_proportion,
+    `Value_per_km2` = value_per_km2,
+    `Potential_Loss` = potential_loss,
+    `Exposure_Ratio` = percent_of_total_area
+  ) %>%
+  mutate(
+    Percent_Ponds_Affected = (Ponds_Above / Total_Ponds) * 100
+  )
+```
+
+```{r}
+# Check columns in economic data
+print("Columns in sensitivity_summary_prawn_economic:")
+names(sensitivity_summary_prawn_economic %>% st_drop_geometry())
+```
+
+```{r}
+# For Prawns
+prawn_summary <- sensitivity_summary_prawn_economic %>%
+  st_drop_geometry() %>%
+  left_join(
+    threshold_results %>%
+      filter(Species == "Prawn") %>%
+      select(threshold, ponds_above_threshold, ponds_below_threshold),
+    by = c("threshold_value" = "threshold")
+  ) %>%
+  select(
+    Threshold = threshold_value,
+    Total_Ponds = n_ponds,
+    Ponds_Above = ponds_above_threshold,
+    Ponds_Below = ponds_below_threshold,
+    `Total_Affected_Area` = total_affected_area,
+    `Value_per_km2` = value_per_km2,
+    `Potential_Loss` = potential_loss,
+    `Exposure_Ratio` = percent_of_total_area
+  ) %>%
+  mutate(
+    Percent_Ponds_Affected = (Ponds_Above / Total_Ponds) * 100
+  )
+```
+
+
+```{r}
+# For Barramundi
+barramundi_summary <- sensitivity_summary_barra_economic %>%
+  st_drop_geometry() %>%
+  left_join(
+    threshold_results %>%
+      filter(Species == "Barramundi") %>%
+      select(threshold, ponds_above_threshold, ponds_below_threshold),
+    by = c("threshold_value" = "threshold")
+  ) %>%
+  select(
+    Threshold = threshold_value,
+    Total_Ponds = n_ponds,
+    Ponds_Above = ponds_above_threshold,
+    Ponds_Below = ponds_below_threshold,
+    `Total_Affected_Area` = total_affected_area,
+    `Value_per_km2` = value_per_km2,
+    `Potential_Loss` = potential_loss,
+    `Exposure_Ratio` = percent_of_total_area
+  ) %>%
+  mutate(
+    Percent_Ponds_Affected = (Ponds_Above / Total_Ponds) * 100
+  )
+```
+
+
+```{r}
+# Format and display tables
+kable(prawn_summary %>% 
+        mutate(across(where(is.numeric), round, 2)), 
+      caption = "Threshold Effects on Prawn Aquaculture Ponds",
+      col.names = c("Threshold", "Total Ponds", "Ponds Above", "Ponds Below", 
+                    "Total Affected Area (km²)", "Value per km² ($)", 
+                    "Potential Loss ($)", "Exposure Ratio (%)", 
+                    "Ponds Affected (%)"))
+
+kable(barramundi_summary %>% 
+        mutate(across(where(is.numeric), round, 2)), 
+      caption = "Threshold Effects on Barramundi Aquaculture Ponds",
+      col.names = c("Threshold", "Total Ponds", "Ponds Above", "Ponds Below", 
+                    "Total Affected Area (km²)", "Value per km² ($)", 
+                    "Potential Loss ($)", "Exposure Ratio (%)", 
+                    "Ponds Affected (%)"))
+```
+
+```{r}
+# Save as CSV files
+write.csv(prawn_summary %>% 
+            mutate(across(where(is.numeric), round, 2)), 
+          here("output_data/prawn_threshold_summary.csv"),
+          row.names = FALSE)
+
+write.csv(barramundi_summary %>% 
+            mutate(across(where(is.numeric), round, 2)), 
+          here("output_data/barramundi_threshold_summary.csv"),
+          row.names = FALSE)
+```
+
+#prawn combined plot
+
+```{r}
+library(patchwork) # for combining plots
+
+# Create line plot
+p1 <- ggplot(sensitivity_summary_prawn, 
+       aes(x = threshold_value, 
+           y = total_affected_area, 
+           color = Species)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(
+    x = NULL,  # remove x label from top plot
+    y = "Total Affected Area (km²)",
+    title = "A) Impact Changes Across Thresholds"
+  ) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  theme(legend.position = "bottom")
+
+# Create density plot with matching x-axis
+p2 <- ggplot(QLD_SLR_erosion_prawn_ponds_filtered, 
+       aes(x = affected_area_proportion, fill = Species)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "B) Distribution of Affected Area Proportions",
+    x = "Threshold",
+    y = "Density") +
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_fill_brewer(palette = "Set2")
+
+# Combine plots
+combined_plot <- p1 / p2 + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Sensitivity Analysis of Inundation Thresholds",
+    subtitle = "Comparing Impact Patterns with Pond Distribution"
+  )
+```
+```{r}
+combined_plot
+```
+
+```{r}
+# Create overlaid plot with two y-axes
+ggplot() +
+  # First layer: Line plot for total affected area
+  geom_line(data = sensitivity_summary_prawn, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area")) +
+  geom_point(data = sensitivity_summary_prawn,
+             aes(x = threshold_value, 
+                 y = total_affected_area)) +
+  # Second layer: Density plot
+  geom_density(data = QLD_SLR_erosion_prawn_ponds_filtered,
+               aes(x = affected_area_proportion, 
+                   y = ..density.. * 10, # Scale density to match area scale
+                   fill = "Pond Distribution"),
+               alpha = 0.3) +
+  # Set up scales and labels
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./10, name = "Density")
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "blue")) +
+  scale_fill_manual(values = c("Pond Distribution" = "red")) +
+  # Labels and theme
+  labs(
+    title = "Sensitivity Analysis: Impact Threshold and Pond Distribution",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "red"),
+    axis.title.y.left = element_text(color = "blue")
+  )
+```
+
+```{r}
+ggplot() +
+  # First layer: Histogram for pond distribution
+  geom_histogram(data = QLD_SLR_erosion_prawn_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5, # Adjust scaling factor as needed
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  # Second layer: Line plot for total affected area
+  geom_line(data = sensitivity_summary_prawn, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area")) +
+  geom_point(data = sensitivity_summary_prawn,
+             aes(x = threshold_value, 
+                 y = total_affected_area)) +
+  # Set up scales and labels
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds")
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "blue")) +
+  scale_fill_manual(values = c("Pond Count" = "red")) +
+  # Labels and theme
+  labs(
+    title = "Sensitivity Analysis: Impact Threshold and Pond Distribution",
+    subtitle = "Comparing Total Affected Area with Number of Ponds at Each Threshold",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "red"),
+    axis.title.y.left = element_text(color = "blue")
+  )
+```
+#barramundi
+```{r}
+ggplot() +
+  # First layer: Histogram for pond distribution
+  geom_histogram(data = QLD_SLR_erosion_Barramundi_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5, # Adjust scaling factor as needed
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  # Second layer: Line plot for total affected area
+  geom_line(data = sensitivity_summary_Barra, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area")) +
+  geom_point(data = sensitivity_summary_Barra,
+             aes(x = threshold_value, 
+                 y = total_affected_area)) +
+  # Set up scales and labels
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds")
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "blue")) +
+  scale_fill_manual(values = c("Pond Count" = "red")) +
+  # Labels and theme
+  labs(
+    title = "Sensitivity Analysis: Impact Threshold and Pond Distribution",
+    subtitle = "Comparing Total Affected Area with Number of Ponds at Each Threshold",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "red"),
+    axis.title.y.left = element_text(color = "blue")
+  )
+```
+#Enhanced for prawn
+```{r}
+# Identify key thresholds where major changes occur
+key_thresholds <- c(0.05, 0.075, 0.15) # 5%, 7.5%, and 15%
+
+ggplot() +
+  # Add vertical lines for key thresholds
+  geom_vline(xintercept = key_thresholds, 
+             linetype = "dashed", 
+             color = "gray50",
+             alpha = 0.5) +
+  # First layer: Histogram for pond distribution
+  geom_histogram(data = QLD_SLR_erosion_prawn_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5,
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  # Second layer: Line plot for total affected area
+  geom_line(data = sensitivity_summary_prawn, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area"),
+            size = 1) +
+  geom_point(data = sensitivity_summary_prawn,
+             aes(x = threshold_value, 
+                 y = total_affected_area),
+             size = 3) +
+  # Add annotations for key transitions
+  annotate("text", x = 0.05, y = 11, 
+           label = "Major transition:\n10.22 → 5.90 km²\n40 → 39 ponds",
+           hjust = 0, size = 3) +
+  annotate("text", x = 0.15, y = 8, 
+           label = "Secondary drop:\n36 affected ponds\n5.52 km² affected",
+           hjust = 0, size = 3) +
+  # Set up scales and labels
+  scale_x_continuous(labels = scales::percent_format(),
+                    breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds"),
+    breaks = seq(0, 12, 2)
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "blue")) +
+  scale_fill_manual(values = c("Pond Count" = "salmon")) +
+  # Labels and theme
+  labs(
+    title = "Sensitivity Analysis: Impact Threshold and Pond Distribution",
+    subtitle = "Major transitions occur at 5% and 15% thresholds",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "salmon"),
+    axis.title.y.left = element_text(color = "blue"),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  ) +
+  # Add shaded regions to highlight key threshold zones
+  annotate("rect", 
+           xmin = 0, xmax = 0.05,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "green") +
+  annotate("rect", 
+           xmin = 0.05, xmax = 0.15,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "yellow")
+```
+```{r}
+# Identify key thresholds where major changes occur
+key_thresholds <- c(0.05, 0.075, 0.15) # 5%, 7.5%, and 15%
+
+ggplot() +
+  # Add vertical lines for key thresholds
+  geom_vline(xintercept = key_thresholds, 
+             linetype = "dashed", 
+             color = "gray50",
+             alpha = 0.5) +
+  # First layer: Histogram for pond distribution
+  geom_histogram(data = QLD_SLR_erosion_prawn_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5,
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  # Second layer: Line plot for total affected area
+  geom_line(data = sensitivity_summary_prawn, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area"),
+            size = 1) +
+  geom_point(data = sensitivity_summary_prawn,
+             aes(x = threshold_value, 
+                 y = total_affected_area),
+             size = 3) +
+  # Add annotations for key transitions
+  annotate("text", x = 0.05, y = 11, 
+           label = "Major transition:\n10.22 → 5.90 km²\n40 → 39 ponds",
+           hjust = 0, size = 3) +
+  annotate("text", x = 0.15, y = 8, 
+           label = "Secondary drop:\n36 affected ponds\n5.52 km² affected",
+           hjust = 0, size = 3) +
+  # Set up scales and labels
+  scale_x_continuous(labels = scales::percent_format(),
+                    breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds"),
+    breaks = seq(0, 12, 2)
+  ) +
+  # Plasma color scheme
+  scale_color_manual(values = c("Total Affected Area" = "#9C179E")) + # Deep purple from plasma
+  scale_fill_manual(values = c("Pond Count" = "#ED7953")) + # Orange from plasma
+  # Labels and theme
+  labs(
+    title = "Sensitivity Analysis: Impact Threshold and Pond Distribution",
+    subtitle = "Major transitions occur at 5% and 15% thresholds",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "#ED7953"),  # Orange
+    axis.title.y.left = element_text(color = "#9C179E"),   # Purple
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  ) +
+  # Add shaded regions with plasma-compatible colors
+  annotate("rect", 
+           xmin = 0, xmax = 0.05,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#FDB915") + # Yellow from plasma
+  annotate("rect", 
+           xmin = 0.05, xmax = 0.15,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#ED7953") # Orange from plasma
+```
+```{r}
+# Identify key thresholds where major changes occur
+key_thresholds <- c(0.05, 0.075, 0.15) # 5%, 7.5%, and 15%
+
+ggplot() +
+  # Add vertical lines for key thresholds
+  geom_vline(xintercept = key_thresholds, 
+             linetype = "dashed", 
+             color = "gray50",
+             alpha = 0.5) +
+  # First layer: Histogram for pond distribution
+  geom_histogram(data = QLD_SLR_erosion_prawn_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5,
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  # Second layer: Line plot for total affected area
+  geom_line(data = sensitivity_summary_prawn, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area"),
+            size = 1) +
+  geom_point(data = sensitivity_summary_prawn,
+             aes(x = threshold_value, 
+                 y = total_affected_area),
+             size = 3) +
+  # Add annotations for key transitions with white background
+  annotate("label", x = 0.05, y = 12, # Moved up and using label instead of text
+           label = "Major transition:\n10.22 → 5.90 km²\n40 → 39 ponds",
+           hjust = 0, size = 3,
+           fill = "white", alpha = 0.8) +
+  annotate("label", x = 0.15, y = 7, # Moved down and using label instead of text
+           label = "Secondary drop:\n36 affected ponds\n5.52 km² affected",
+           hjust = 0, size = 3,
+           fill = "white", alpha = 0.8) +
+  # Set up scales and labels
+  scale_x_continuous(labels = scales::percent_format(),
+                    breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds"),
+    breaks = seq(0, 12, 2)
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "#9C179E")) +
+  scale_fill_manual(values = c("Pond Count" = "#ED7953")) +
+  # Labels and theme
+  labs(
+    title = "Sensitivity Analysis: Impact Threshold and Pond Distribution",
+    subtitle = "Major transitions occur at 5% and 15% thresholds",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "#ED7953"),
+    axis.title.y.left = element_text(color = "#9C179E"),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  ) +
+  # Add shaded regions with plasma-compatible colors
+  annotate("rect", 
+           xmin = 0, xmax = 0.05,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#FDB915") +
+  annotate("rect", 
+           xmin = 0.05, xmax = 0.15,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#ED7953")
+```
+
+```{r}
+# Identify key thresholds where major changes occur for Barramundi
+key_thresholds_barra <- c(0.15, 0.20, 0.40) # Key transitions for Barramundi
+
+ggplot() +
+  # Add vertical lines for key thresholds
+  geom_vline(xintercept = key_thresholds_barra, 
+             linetype = "dashed", 
+             color = "gray50",
+             alpha = 0.5) +
+  # First layer: Histogram for pond distribution
+  geom_histogram(data = QLD_SLR_erosion_Barramundi_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5,
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  # Second layer: Line plot for total affected area
+  geom_line(data = sensitivity_summary_Barra, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area"),
+            size = 1) +
+  geom_point(data = sensitivity_summary_Barra,
+             aes(x = threshold_value, 
+                 y = total_affected_area),
+             size = 3) +
+  # Add annotations for key transitions with white background
+  annotate("label", x = 0.15, y = 1.8, 
+           label = "First major drop:\n1.34 → 1.27 km²\n13 → 11 ponds",
+           hjust = 0, size = 3,
+           fill = "white", alpha = 0.8) +
+  annotate("label", x = 0.40, y = 1.4, 
+           label = "Second transition:\n9 → 6 ponds\n1.20 → 1.10 km² affected",
+           hjust = 0, size = 3,
+           fill = "white", alpha = 0.8) +
+  # Set up scales and labels
+  scale_x_continuous(labels = scales::percent_format(),
+                    breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds"),
+    breaks = seq(0, 2, 0.2)
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "#9C179E")) +
+  scale_fill_manual(values = c("Pond Count" = "#ED7953")) +
+  # Labels and theme
+  labs(
+    title = "Sensitivity Analysis: Impact Threshold and Pond Distribution",
+    subtitle = "Major transitions occur at 15% and 40% thresholds",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "#ED7953"),
+    axis.title.y.left = element_text(color = "#9C179E"),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  ) +
+  # Add shaded regions with plasma-compatible colors
+  annotate("rect", 
+           xmin = 0, xmax = 0.15,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#FDB915") +
+  annotate("rect", 
+           xmin = 0.15, xmax = 0.40,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#ED7953")
+```
+```{r}
+# First, let's create both plots separately and then combine them
+library(patchwork) # for combining plots
+
+# Prawn Plot
+prawn_plot <- ggplot() +
+  geom_vline(xintercept = c(0.05, 0.075, 0.15), 
+             linetype = "dashed", 
+             color = "gray50",
+             alpha = 0.5) +
+  geom_histogram(data = QLD_SLR_erosion_prawn_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5,
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  geom_line(data = sensitivity_summary_prawn, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area"),
+            size = 1) +
+  geom_point(data = sensitivity_summary_prawn,
+             aes(x = threshold_value, 
+                 y = total_affected_area),
+             size = 3) +
+  annotate("label", x = 0.05, y = 12,
+           label = "Major transition:\n10.22 → 5.90 km²\n40 → 39 ponds",
+           hjust = 0, size = 3,
+           fill = "white", alpha = 0.8) +
+  annotate("label", x = 0.15, y = 7,
+           label = "Secondary drop:\n36 affected ponds\n5.52 km² affected",
+           hjust = 0, size = 3,
+           fill = "white", alpha = 0.8) +
+  scale_x_continuous(labels = scales::percent_format(),
+                    breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds"),
+    breaks = seq(0, 12, 2)
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "#9C179E")) +
+  scale_fill_manual(values = c("Pond Count" = "#ED7953")) +
+  labs(
+    title = "A) Prawn Aquaculture",
+    subtitle = "Major transitions at 5% and 15% thresholds",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "#ED7953"),
+    axis.title.y.left = element_text(color = "#9C179E"),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  ) +
+  annotate("rect", 
+           xmin = 0, xmax = 0.05,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#FDB915") +
+  annotate("rect", 
+           xmin = 0.05, xmax = 0.15,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#ED7953")
+
+# Barramundi Plot
+barra_plot <- ggplot() +
+  geom_vline(xintercept = c(0.15, 0.20, 0.40), 
+             linetype = "dashed", 
+             color = "gray50",
+             alpha = 0.5) +
+  geom_histogram(data = QLD_SLR_erosion_Barramundi_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5,
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  geom_line(data = sensitivity_summary_Barra, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area"),
+            size = 1) +
+  geom_point(data = sensitivity_summary_Barra,
+             aes(x = threshold_value, 
+                 y = total_affected_area),
+             size = 3) +
+  annotate("label", x = 0.15, y = 1.8,
+           label = "First major drop:\n1.34 → 1.27 km²\n13 → 11 ponds",
+           hjust = 0, size = 3,
+           fill = "white", alpha = 0.8) +
+  annotate("label", x = 0.40, y = 1.4,
+           label = "Second transition:\n9 → 6 ponds\n1.20 → 1.10 km² affected",
+           hjust = 0, size = 3,
+           fill = "white", alpha = 0.8) +
+  scale_x_continuous(labels = scales::percent_format(),
+                    breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds"),
+    breaks = seq(0, 2, 0.2)
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "#9C179E")) +
+  scale_fill_manual(values = c("Pond Count" = "#ED7953")) +
+  labs(
+    title = "B) Barramundi Aquaculture",
+    subtitle = "Major transitions at 15% and 40% thresholds",
+    x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "#ED7953"),
+    axis.title.y.left = element_text(color = "#9C179E"),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  ) +
+  annotate("rect", 
+           xmin = 0, xmax = 0.15,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#FDB915") +
+  annotate("rect", 
+           xmin = 0.15, xmax = 0.40,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#ED7953")
+
+# Combine plots
+combined_plot <- prawn_plot + barra_plot +
+  plot_layout(guides = "collect") & # Share the legend
+  theme(legend.position = "bottom")
+
+# Save high-resolution version
+ggsave("sensitivity_analysis_combined.png", 
+       combined_plot,
+       width = 12, 
+       height = 6, 
+       dpi = 300)
+
+# For even higher resolution (e.g., for publication)
+ggsave("sensitivity_analysis_combined_highres.tiff", 
+       combined_plot,
+       width = 12, 
+       height = 6, 
+       dpi = 600,
+       compression = "lzw")
+```
+```{r}
+combined_plot
+
+```
+
+#prawn sensitvity figure without subtitle and drop texts
+
+```{r}
+# Identify key thresholds where major changes occur
+key_thresholds <- c(0.05, 0.075, 0.15) # 5%, 7.5%, and 15%
+
+prawn_sens_plot<- ggplot() +
+  # Add vertical lines for key thresholds
+  geom_vline(xintercept = key_thresholds, 
+             linetype = "dashed", 
+             color = "gray50",
+             alpha = 0.5) +
+  # First layer: Histogram for pond distribution
+  geom_histogram(data = QLD_SLR_erosion_prawn_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5,
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  # Second layer: Line plot for total affected area
+  geom_line(data = sensitivity_summary_prawn, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area"),
+            size = 1) +
+  geom_point(data = sensitivity_summary_prawn,
+             aes(x = threshold_value, 
+                 y = total_affected_area),
+             size = 3) +
+    # Set up scales and labels
+  scale_x_continuous(labels = scales::percent_format(),
+                    breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds"),
+    breaks = seq(0, 12, 2)
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "#9C179E")) +
+  scale_fill_manual(values = c("Pond Count" = "#ED7953")) +
+  # Labels and theme
+  labs(
+      x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "#ED7953"),
+    axis.title.y.left = element_text(color = "#9C179E"),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  ) +
+  # Add shaded regions with plasma-compatible colors
+  annotate("rect", 
+           xmin = 0, xmax = 0.05,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#FDB915") +
+  annotate("rect", 
+           xmin = 0.05, xmax = 0.15,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#ED7953")
+```
+
+
+```{r}
+# Save high-resolution version
+ggsave(filename = here("figures/Final_figures/prawn_sens_plot.png"), 
+       plot = prawn_sens_plot,
+       width = 12, 
+       height = 6, 
+       dpi = 300)
+
+# For even higher resolution (e.g., for publication)
+ggsave(filename = here("figures/Final_figures/prawn_sens_plot_highres.tiff"), 
+       plot = prawn_sens_plot,
+       width = 12, 
+       height = 6, 
+       dpi = 600,
+       compression = "lzw")
+
+```
+
+#Barramundi sensitivity tests without subtitle and drop texts
+
+```{r}
+# Identify key thresholds where major changes occur
+key_thresholds <- c(0.05, 0.075, 0.15) # 5%, 7.5%, and 15%
+
+Barra_sens_plot <- ggplot() +
+  geom_vline(xintercept = c(0.15, 0.20, 0.40), 
+             linetype = "dashed", 
+             color = "gray50",
+             alpha = 0.5) +
+  geom_histogram(data = QLD_SLR_erosion_Barramundi_ponds_filtered,
+                aes(x = affected_area_proportion, 
+                    y = after_stat(count) * 0.5,
+                    fill = "Pond Count"),
+                bins = 30,
+                alpha = 0.7) +
+  geom_line(data = sensitivity_summary_Barra, 
+            aes(x = threshold_value, 
+                y = total_affected_area,
+                color = "Total Affected Area"),
+            size = 1) +
+  geom_point(data = sensitivity_summary_Barra,
+             aes(x = threshold_value, 
+                 y = total_affected_area),
+             size = 3) +
+  scale_x_continuous(labels = scales::percent_format(),
+                    breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(
+    name = "Total Affected Area (km²)",
+    sec.axis = sec_axis(~./0.5, name = "Number of Ponds"),
+    breaks = seq(0, 2, 0.2)
+  ) +
+  scale_color_manual(values = c("Total Affected Area" = "#9C179E")) +
+  scale_fill_manual(values = c("Pond Count" = "#ED7953")) +
+  labs(
+        x = "Threshold/Affected Area Proportion",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y.right = element_text(color = "#ED7953"),
+    axis.title.y.left = element_text(color = "#9C179E"),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  ) +
+  annotate("rect", 
+           xmin = 0, xmax = 0.15,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#FDB915") +
+  annotate("rect", 
+           xmin = 0.15, xmax = 0.40,
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#ED7953")
+
+```
+
+
+```{r}
+# Save high-resolution version
+ggsave(filename = here("figures/Final_figures/Barra_sens_plot.png"), 
+       plot = Barra_sens_plot,
+       width = 12, 
+       height = 6, 
+       dpi = 300)
+
+# For even higher resolution (e.g., for publication)
+ggsave(filename = here("figures/Final_figures/Barra_sens_plot_highres.tiff"), 
+       plot = Barra_sens_plot,
+       width = 12, 
+       height = 6, 
+       dpi = 600,
+       compression = "lzw")
+
+```
+
+
+
+
