@@ -38,7 +38,7 @@ Code_Stick_files_GEE_Output.Rmd
 Once you know where the ponds are, the fun begins! You can check the exposure of SLR over those ponds 
 that are productive or had water in that timeframe you detected using GEE
 Figure 3 A and B derive from this code
-Ponds_in_leases_erosion_and_histograms_version_3.0.Rmd
+Ponds_in_leases_erosion_and_histograms_version_4_revision_v3march.Rmd
 
 This code was used to know where in prawn and barramundi productions were the areas that had 
 high production and high risk. Figure 4 is an output
